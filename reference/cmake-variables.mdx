@@ -1,0 +1,209 @@
+---
+title: "CMake build variables reference"
+description: "Complete reference for CMake variables that control how the LLNL units library is built, installed, and configured, organized by category."
+---
+
+The units library exposes a set of CMake cache variables that control which targets are built, what optional features are compiled in, and how the installation is structured. You set these variables on the CMake command line with `-D<VAR>=<VALUE>`, in a `CMakePresets.json` file, or via `set(... CACHE ...)` when embedding the library as a subproject.
+
+## Testing
+
+<AccordionGroup>
+  <Accordion title="BUILD_TESTING">
+    **Type:** `BOOL`
+
+    CMake standard variable. Controls whether the test suite is built. Identical in effect to `UNITS_ENABLE_TESTS`.
+  </Accordion>
+  <Accordion title="UNITS_ENABLE_TESTS">
+    **Type:** `BOOL`
+
+    Alias for `BUILD_TESTING`. Either variable enables or disables building the tests.
+  </Accordion>
+  <Accordion title="UNITS_USE_EXTERNAL_GTEST">
+    **Default:** `OFF`
+
+    Only evaluated when tests are enabled. When `ON`, CMake searches for an installed GoogleTest and GoogleMock instead of using the bundled submodule.
+  </Accordion>
+  <Accordion title="UNITS_BUILD_FUZZ_TARGETS">
+    **Default:** `OFF`
+
+    When `ON`, compiles libFuzzer-based fuzz targets using Clang's libFuzzer. Requires a Clang build.
+  </Accordion>
+</AccordionGroup>
+
+## Library type
+
+<AccordionGroup>
+  <Accordion title="BUILD_SHARED_LIBS">
+    **Type:** `BOOL`
+
+    Standard CMake variable. Sets the default value for `UNITS_BUILD_SHARED_LIBRARY` and `UNITS_BUILD_STATIC_LIBRARY`. Explicit settings of those two variables take precedence.
+  </Accordion>
+  <Accordion title="UNITS_BUILD_STATIC_LIBRARY">
+    **Type:** `BOOL`
+
+    Controls whether a static library (`units::units`) is built. Only one of `UNITS_BUILD_STATIC_LIBRARY`, `UNITS_BUILD_SHARED_LIBRARY`, or `UNITS_BUILD_OBJECT_LIBRARY` may be `ON` at the same time. If more than one are set, shared and object take precedence over static.
+  </Accordion>
+  <Accordion title="UNITS_BUILD_SHARED_LIBRARY">
+    **Type:** `BOOL`
+
+    Controls whether a shared library is built. Mutually exclusive with `UNITS_BUILD_STATIC_LIBRARY` (only one or none may be enabled).
+  </Accordion>
+  <Accordion title="UNITS_BUILD_OBJECT_LIBRARY">
+    **Default:** `OFF`
+
+    Generates a CMake object library suitable for incorporation into other builds. Takes precedence over the static library if both are set.
+  </Accordion>
+  <Accordion title="UNITS_HEADER_ONLY">
+    **Type:** `BOOL`
+
+    When `ON`, only the `units::header_only` interface target is generated. Sets `UNITS_BUILD_STATIC_LIBRARY` and `UNITS_BUILD_SHARED_LIBRARY` to `OFF`. Useful when embedding as a subproject without adding a compiled library.
+  </Accordion>
+</AccordionGroup>
+
+## Features and optional components
+
+<AccordionGroup>
+  <Accordion title="UNITS_BUILD_WEB_SERVER">
+    **Default:** `ON`
+
+    Builds an HTTP unit-conversion web server using Boost.Beast. Requires Boost 1.70 or later and CMake 3.12 or later.
+  </Accordion>
+  <Accordion title="UNITS_BUILD_CONVERTER_APP">
+    **Type:** `BOOL`
+
+    Enables building a command-line unit converter application.
+  </Accordion>
+  <Accordion title="UNITS_BUILD_PYTHON_LIBRARY">
+    **Type:** `BOOL`
+
+    When `ON`, builds a Python wrapper for the library using nanobind.
+  </Accordion>
+  <Accordion title="UNITS_BUILD_CXX_MODULE">
+    **Type:** `BOOL`
+
+    When `ON` and CMake 3.28 or newer is in use, generates an experimental C++20 module target `units::module` that can be consumed with `import units;`. The module re-exports a curated public API in the `units::` namespace.
+  </Accordion>
+  <Accordion title="UNITS_BASE_TYPE">
+    **Type:** `STRING`
+
+    Set to `uint64_t` to expand the range of base-unit powers that can be represented. This increases the in-memory size of a `unit` object by 4 bytes.
+  </Accordion>
+  <Accordion title="UNITS_DOMAIN">
+    **Type:** `STRING`
+
+    Sets a compile-time default domain for string conversions. Accepts a value from the `domains` namespace (e.g., `domains::surveying`) or one of the string aliases: `COOKING`, `ASTRONOMY`, `NUCLEAR`, `SURVEYING`, `US_CUSTOMARY`, `CLIMATE`, or `UCUM`.
+  </Accordion>
+  <Accordion title="UNITS_DEFAULT_MATCH_FLAGS">
+    **Type:** `STRING` (integer)
+
+    Sets the compile-time default value for the conversion flags used by `unit_from_string` and `to_string` when no explicit flags argument is passed. See the [conversion flags reference](/reference/conversion-flags) for the list of flag values.
+  </Accordion>
+  <Accordion title="UNITS_DISABLE_NON_ENGLISH_UNITS">
+    **Default:** `OFF`
+
+    When `ON`, removes support for non-English unit name strings (e.g., unit names in other languages) from the compiled library. Equivalent to setting the corresponding preprocessor definition in C++ code.
+  </Accordion>
+  <Accordion title="UNITS_DISABLE_EXTRA_UNIT_STANDARDS">
+    **Default:** `OFF`
+
+    When `ON`, excludes UN Recommendation 20, X12, and DOD unit standard support from compilation. Reduces binary size for builds that do not need these standards.
+  </Accordion>
+</AccordionGroup>
+
+## Installation and packaging
+
+<AccordionGroup>
+  <Accordion title="UNITS_INSTALL">
+    **Default:** `ON` (standalone build), `OFF` (subproject)
+
+    Controls whether the `install` target installs any files. Automatically set to `OFF` when units is included as a CMake subdirectory, preventing it from polluting the parent project's install tree.
+  </Accordion>
+  <Accordion title="UNITS_BINARY_ONLY_INSTALL">
+    **Type:** `BOOL`
+
+    When `ON`, the install target copies only shared libraries and executables. Headers, static libraries, and CMake package files are excluded.
+  </Accordion>
+  <Accordion title="UNITS_PYTHON_INSTALL_SHARED_LIBRARY">
+    **Type:** `BOOL`
+
+    When `ON` and `UNITS_BUILD_SHARED_LIBRARY` is also `ON`, installs the shared library alongside the Python extension module.
+  </Accordion>
+  <Accordion title="UNITS_PYTHON_ONLY_INSTALL">
+    **Default:** `ON` when built with scikit-build, otherwise `OFF`
+
+    When `ON`, the install target only installs files required by the Python library. Normal library installation is skipped.
+  </Accordion>
+  <Accordion title="UNITS_LIBRARY_EXPORT_COMMAND">
+    **Default:** `"EXPORT unitsTargets"`
+
+    Controls which CMake export set the units targets are added to. Set to `EXPORT rootProjectTargets` (or equivalent) to merge units targets into a parent project's export set. Rarely needed outside of framework builds.
+  </Accordion>
+</AccordionGroup>
+
+## Naming and namespace
+
+<AccordionGroup>
+  <Accordion title="UNITS_NAMESPACE">
+    **Default:** `units`
+
+    Sets the top-level C++ namespace of the library. When building with C++17 or higher, you can set this to a nested namespace such as `mynamespace::units` to avoid name clashes with other libraries that define a `units` namespace.
+  </Accordion>
+  <Accordion title="UNITS_CMAKE_PROJECT_NAME">
+    **Default:** `UNITS`
+
+    Renames the CMake project, which changes the install path, the CMake package name, and the target prefixes. For example, setting `-DUNITS_CMAKE_PROJECT_NAME=LLNL-UNITS` creates targets `llnl-units::units` and `llnl-units::header_only` and installs into an `llnl-units/` directory.
+  </Accordion>
+</AccordionGroup>
+
+## Compiler warnings and diagnostics
+
+| Variable | Description |
+|---|---|
+| `UNITS_ENABLE_EXTRA_COMPILER_WARNINGS` | Enables an extended set of compiler warnings. On by default. |
+| `UNITS_ENABLE_ERROR_ON_WARNINGS` | Enables `-Werror` (or equivalent), turning all warnings into errors. Useful in CI. |
+| `UNITS_CLANG_TIDY` | Runs clang-tidy as part of the build. |
+| `UNITS_CLANG_TIDY_OPTIONS` | Options string passed to clang-tidy when `UNITS_CLANG_TIDY` is enabled. |
+| `CMAKE_CXX_STANDARD` | C++ standard version. Valid values: `11`, `14`, `17`, `20`, `23`. Defaults to `14` if not set. |
+
+## CMake targets
+
+These targets are created by the build and available for use in downstream projects. The prefix (`units`) can be changed via `UNITS_CMAKE_PROJECT_NAME`.
+
+| Target | Description |
+|---|---|
+| `units::units` | The compiled library (shared, static, or object, depending on build settings). |
+| `units::header_only` | Interface target for header-only use. Always created. |
+| `units::module` | Experimental C++20 module. Only available when `UNITS_BUILD_CXX_MODULE=ON`. |
+
+## Example: embedding as a subproject
+
+The following CMake snippet shows a typical configuration when using the units library as a subdirectory, based on its use in the [HELICS](https://github.com/GMLC-TDC/HELICS) project.
+
+```cmake
+# Disable installation so units does not install into the parent project tree
+set(UNITS_INSTALL OFF CACHE INTERNAL "")
+
+if(NOT CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+endif()
+
+set(UNITS_BUILD_OBJECT_LIBRARY  OFF CACHE INTERNAL "")
+set(UNITS_BUILD_STATIC_LIBRARY  ON  CACHE INTERNAL "")
+set(UNITS_BUILD_SHARED_LIBRARY  OFF CACHE INTERNAL "")
+set(UNITS_BUILD_CONVERTER_APP   OFF CACHE INTERNAL "")
+set(UNITS_BUILD_WEBSERVER       OFF CACHE INTERNAL "")
+set(UNITS_CLANG_TIDY_OPTIONS    ""  CACHE INTERNAL "")
+set(UNITS_BUILD_FUZZ_TARGETS    OFF CACHE INTERNAL "")
+
+add_subdirectory(
+    "${PROJECT_SOURCE_DIR}/ThirdParty/units"
+    "${PROJECT_BINARY_DIR}/ThirdParty/units"
+)
+
+# Link the units static library into your target
+target_link_libraries(my_target PUBLIC units::units)
+```
+
+<Tip>
+Always use `CACHE INTERNAL ""` when overriding units variables from a parent project. This prevents the variables from appearing in `cmake-gui` or `ccmake`, which reduces confusion for users configuring your project.
+</Tip>

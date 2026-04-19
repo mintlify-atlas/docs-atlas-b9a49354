@@ -1,0 +1,177 @@
+---
+title: "Tracking measurement uncertainty with Units"
+description: "uncertain_measurement pairs a float value with a float uncertainty and propagates error through arithmetic using root-sum-of-squares or simple linear methods."
+keywords: ["uncertain_measurement", "uncertainty", "fractional_uncertainty", "simple_add", "simple_product", "uncertain_measurement_from_string", "concise notation"]
+---
+
+When a measured value carries an associated uncertainty — an instrument tolerance, a standard deviation, or a confidence interval — the `uncertain_measurement` type tracks both the value and its uncertainty through calculations. Arithmetic operators propagate the uncertainty automatically using the root-sum-of-squares (RSS) method. A set of `simple_*` alternatives use linear propagation instead.
+
+## Type overview
+
+`uncertain_measurement` stores a `float` value, a `float` uncertainty, and a `unit`. The total size is 16 bytes. Using `float` is intentional: uncertainty estimates rarely warrant higher precision, and the compact layout keeps the type the same size as `measurement`.
+
+## Constructors
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+// Default: value = 0, uncertainty = 0, unit = one (dimensionless)
+uncertain_measurement um0;
+
+// Explicit value, uncertainty, and unit
+uncertain_measurement um1(3.0, 0.2, m);   // 3.0 ± 0.2 m
+
+// Value and unit only — uncertainty defaults to 0
+uncertain_measurement um2(5.0, s);
+
+// From a measurement and a float uncertainty
+measurement base(10.0, kg);
+uncertain_measurement um3(base, 0.5f);    // 10.0 ± 0.5 kg
+
+// From a measurement value and an uncertainty measurement
+measurement unc_meas(0.3, kg);
+uncertain_measurement um4(base, unc_meas); // uncertainty converted to same unit as base
+```
+
+## Arithmetic and uncertainty propagation
+
+The overloaded `+`, `-`, `*`, and `/` operators use root-sum-of-squares propagation, which assumes the two measurements are independent:
+
+```cpp
+uncertain_measurement length(10.0, 0.1, m);  // 10.0 ± 0.1 m
+uncertain_measurement time(2.0, 0.05, s);    //  2.0 ± 0.05 s
+
+// RSS propagation
+uncertain_measurement speed = length / time;
+// value ≈ 5.0 m/s
+// uncertainty = sqrt((0.1/10.0)² + (0.05/2.0)²) * 5.0  ≈ 0.13 m/s
+```
+
+The `simple_*` variants use linear propagation — they simply sum the absolute uncertainties:
+
+```cpp
+uncertain_measurement a(3.0, 0.2, m);
+uncertain_measurement b(1.5, 0.1, m);
+
+// Linear propagation (simple_add sums the uncertainties directly)
+uncertain_measurement sum_simple = simple_add(a, b);      // 4.5 ± 0.3 m
+
+// RSS propagation (operator+)
+uncertain_measurement sum_rss    = a + b;                 // 4.5 ± 0.224 m
+
+// Other simple variants
+uncertain_measurement diff   = simple_subtract(a, b);     // 1.5 ± 0.3 m
+uncertain_measurement prod   = simple_product(a, b);      // 4.5 m² ± propagated
+uncertain_measurement quot   = simple_divide(a, b);       // 2.0 ± propagated
+```
+
+<Note>
+`simple_product` and `simple_divide` are `constexpr` when compiled with C++14 or later.
+</Note>
+
+## Accessing the uncertainty
+
+<AccordionGroup>
+  <Accordion title="uncertainty()">
+    Returns the numerical uncertainty value as a `double`.
+
+    ```cpp
+    uncertain_measurement um(10.0, 0.4, m);
+    double unc = um.uncertainty(); // 0.4
+    ```
+  </Accordion>
+  <Accordion title="uncertainty_f()">
+    Returns the uncertainty as a `float` (the native storage type).
+
+    ```cpp
+    float unc_f = um.uncertainty_f(); // 0.4f
+    ```
+  </Accordion>
+  <Accordion title="uncertainty_measurement()">
+    Returns the uncertainty as a `measurement` object with the same unit as the parent.
+
+    ```cpp
+    measurement unc_m = um.uncertainty_measurement(); // 0.4 m
+    ```
+  </Accordion>
+  <Accordion title="uncertainty_as(unit)">
+    Returns the uncertainty value converted to the given unit as a `double`.
+
+    ```cpp
+    uncertain_measurement um(1.0, 0.05, km);
+    double unc_m = um.uncertainty_as(m); // 50.0 (50 meters)
+    ```
+  </Accordion>
+  <Accordion title="fractional_uncertainty()">
+    Returns the uncertainty as a fraction of the absolute value — the relative error.
+
+    ```cpp
+    uncertain_measurement um(10.0, 0.4, m);
+    double frac = um.fractional_uncertainty(); // 0.04 (4%)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Setting the uncertainty
+
+You can update the uncertainty after construction:
+
+```cpp
+uncertain_measurement um(5.0, 0.0, m);
+
+// Set from a numeric value
+um.uncertainty(0.3);
+
+// Set from a measurement (converted to the parent unit automatically)
+measurement unc(30.0, cm);
+um.uncertainty(unc); // 0.3 m
+```
+
+## Parsing from strings
+
+`uncertain_measurement_from_string` recognizes several notations for the value±uncertainty form. The parser splits the string on an uncertainty marker, then applies `measurement_from_string` to each half.
+
+Supported uncertainty markers:
+
+| Marker | Example |
+|---|---|
+| `+/-` | `3.1 +/- 0.3 m/s` |
+| `±` | `3.1±0.3 m/s` |
+| `+-` | `3.1 +- 0.3 m/s` |
+| `&pm;`, `&plusmn;`, `&#xB1;` | HTML-encoded variants |
+| `\pm` (with spaces) | LaTeX-style |
+
+All of the following strings produce the same `uncertain_measurement`:
+
+```cpp
+auto um1 = uncertain_measurement_from_string("3.1±0.3 m/s");
+auto um2 = uncertain_measurement_from_string("3.1 +/- 0.3 m/s");
+auto um3 = uncertain_measurement_from_string("3.1 m/s ±0.3 m/s");
+auto um4 = uncertain_measurement_from_string("3.1 m/s ±0.3");
+auto um5 = uncertain_measurement_from_string("3.1 meters per second ±0.3 m/s");
+auto um6 = uncertain_measurement_from_string("3.1 m/s +- 0.3*60 meters per minute");
+```
+
+### Concise notation
+
+The [NIST concise notation](https://physics.nist.gov/cgi-bin/cuu/Info/Constants/definitions.html) encodes the uncertainty in the last digit positions using parentheses:
+
+```cpp
+// "3.1(3) m/s" means 3.1 ± 0.3 m/s
+auto um = uncertain_measurement_from_string("3.1(3) m/s");
+
+// "3.5235(19) kg" means 3.5235 ± 0.0019 kg
+auto um2 = uncertain_measurement_from_string("3.5235(19) kg");
+```
+
+The number in parentheses represents the uncertainty in the last digits shown. Its decimal position matches the last digit of the value.
+
+## Converting to strings
+
+`to_string` formats an `uncertain_measurement` using the `+/-` notation and attempts to honor significant digits based on the magnitude of the uncertainty:
+
+```cpp
+uncertain_measurement um(10.0, 0.4, m);
+std::string s = to_string(um); // "10+/-0.4 m"
+```

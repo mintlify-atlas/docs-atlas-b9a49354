@@ -1,0 +1,83 @@
+---
+title: "What is the Units Library?"
+description: "An LLNL runtime C++ library for working with physical units — converts between units and strings, supports any unit at runtime, and fits in 8 bytes."
+---
+
+The Units library is a runtime C++ library developed at Lawrence Livermore National Laboratory for working with physical units of measurement. It represents any unit as a compact 8-byte value, converts between hundreds of units, and parses or generates human-readable unit strings — all at runtime without requiring units to be known at compile time. It originated in [LLNL/GridDyn](https://github.com/LLNL/GridDyn) and [HELICS](https://github.com/GMLC-TDC/HELICS), where applications needed to accept arbitrary units from configuration files and user input without a fixed, pre-compiled set of types.
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get to a working C++ or Python example in minutes.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/units">
+    Understand `unit`, `measurement`, and the other core types.
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Header-only, CMake FetchContent, submodule, or pip.
+  </Card>
+</CardGroup>
+
+## Why this library was created
+
+Most C++ unit libraries represent each unit as a separate type. That works well when every unit is known at compile time, but it breaks down when units come from configuration files, user input, or virtual function interfaces — situations where a single generic type is required. The design requirements that drove this library were:
+
+- A single compact unit type usable in virtual function calls and generic containers, no larger than a `double`
+- Runtime string conversions to and from unit names (no other C++ library provided this)
+- Support for per-unit operations common in power systems (e.g., `$/puMW/hr`)
+- Interoperability with `double` arrays from numerical solvers
+- `constexpr` operations wherever possible for units known at compile time
+- A broad, pre-defined set of units across scientific and engineering domains
+
+## When to choose this library
+
+<AccordionGroup>
+  <Accordion title="Choose the Units library when...">
+    1. **String conversions are required** — you need to parse `"45 mph"` or `"10 kg/m^3"` from user input or configuration files at runtime.
+    2. **The number of units is large** — you handle a wide and open-ended variety of units across disciplines.
+    3. **A single type is needed** — you want one `unit` or `measurement` type for all units, not a template-per-unit design.
+    4. **Uncertainty propagation matters** — the `uncertain_measurement` type tracks and propagates measurement uncertainty through arithmetic.
+    5. **Per-unit operations are needed** — common in power systems, these are built into the type system.
+    6. **Commodities are relevant** — the library can distinguish `gal{water}` from `gal{gasoline}` as separate unit instances.
+    7. **Compile-time type safety is not a hard requirement** — the library provides runtime checks but not compile-time dimensional analysis.
+    8. **Custom or unusual units are needed** — user-defined units can be registered at runtime and used in all string operations.
+  </Accordion>
+  <Accordion title="Choose a different library when...">
+    1. **Compile-time type safety is required** — if preventing unit errors in equations at compile time is a design requirement, consider [boost/units](https://www.boost.org/doc/libs/1_79_0/doc/html/boost_units.html), [nholthaus/units](https://github.com/nholthaus/units), or [mpusz/mp-units](https://github.com/mpusz/units) (targeting C++23/26).
+    2. **Zero runtime overhead is critical** — compile-time libraries can eliminate all unit-checking overhead; this library has a small runtime cost for conversions.
+    3. **You work with a small, fixed set of units** — a compile-time library will give you better type safety with no downsides.
+    4. **Fractional unit powers are needed** — general fractional powers (e.g., `m^0.5`) are not supported. Only integer powers and a specific `√Hz` definition for noise density are available.
+    5. **Arbitrary datum shifts are required** — general support for datum shifts (beyond temperature) is not implemented.
+    6. **You need C++03 or C++98 support** — the library requires C++11 at minimum; C++14 is recommended.
+  </Accordion>
+</AccordionGroup>
+
+## Comparison with compile-time alternatives
+
+The key distinction from libraries like `boost/units` or `nholthaus/units` is the runtime-first design:
+
+| Feature | LLNL Units | Compile-time libraries |
+|---|---|---|
+| Unit type | Single 8-byte value | One type per unit combination |
+| String conversion | Built in | Not available |
+| Units known at | Runtime or compile time | Compile time only |
+| Compile-time checking | No | Yes |
+| Runtime overhead | Small (conversion cost) | Zero |
+| Per-unit support | Yes | Varies |
+| Uncertainty tracking | Yes (`uncertain_measurement`) | Rarely |
+
+<Note>
+  This library does **not** provide compile-time unit checking. If a measurement is converted to the wrong unit, the result is `NaN` (detectable via `std::isnan`) or the `constants::invalid_conversion` sentinel — not a compile error. If compile-time dimensional analysis is a hard requirement, use a type-safe alternative.
+</Note>
+
+## Key types at a glance
+
+The library exposes a small set of types, each fitting within a predictable size:
+
+- **`unit`** — 8 bytes: a `float` multiplier plus a 4-byte base unit representation. Accurate to ~7 significant digits.
+- **`precise_unit`** — 16 bytes: a `double` multiplier plus base units plus a commodity field. Accurate to ~13 digits.
+- **`measurement`** — 16 bytes: a `double` value paired with a `unit`.
+- **`precise_measurement`** — 24 bytes: a `double` value paired with a `precise_unit`.
+- **`uncertain_measurement`** — 16 bytes: a `float` value, a `float` uncertainty, and a `unit`. Propagates uncertainty through arithmetic.
+- **`fixed_measurement`** — 16 bytes: like `measurement` but with a fixed unit; assignments auto-convert.
+
+All types support arithmetic operators, comparison, and `constexpr` construction where the standard allows it.

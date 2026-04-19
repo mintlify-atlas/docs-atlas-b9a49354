@@ -1,0 +1,252 @@
+---
+title: "Install and link the Units library"
+description: "Install the LLNL Units library via header-only copy, CMake FetchContent, Git submodule, standalone build, or pip — and link using the correct CMake target."
+---
+
+The Units library ships in two modes: a header-only mode that you can drop into any project with no build step, and a compiled mode that adds string conversion and root operations. Choose the method that fits your project structure below.
+
+<Tabs>
+  <Tab title="C++">
+    ## Method 1: Header-only
+
+    The header-only portion of the library can be copied directly into your project. Copy these four headers from the `units/` directory of the repository:
+
+    - `units_decl.hpp` — core class declarations
+    - `unit_definitions.hpp` — predefined unit constants
+    - `units_util.hpp` — additional helper functions
+    - `units.hpp` — primary public interface (include this one)
+
+    Then define `UNITS_HEADER_ONLY` before including `units.hpp`, or set it as a compile definition in your build system.
+
+    <Warning>
+      You **must** define `UNITS_HEADER_ONLY` when using the headers without the compiled `.cpp` files. Omitting this definition will cause linker errors for undefined symbols from the string conversion and root operation functions.
+    </Warning>
+
+    <Steps>
+      <Step title="Copy the headers">
+        Copy `units_decl.hpp`, `unit_definitions.hpp`, `units_util.hpp`, and `units.hpp` from the repository's `units/` directory into your project (e.g., `include/units/`).
+      </Step>
+      <Step title="Add the compile definition">
+        ```cmake
+        target_compile_definitions(my_app PRIVATE UNITS_HEADER_ONLY)
+        target_include_directories(my_app PRIVATE include)
+        ```
+
+        Or in C++ before the include:
+
+        ```cpp
+        #define UNITS_HEADER_ONLY
+        #include "units/units.hpp"
+        ```
+      </Step>
+      <Step title="Use the header-only CMake target (optional)">
+        If you integrate via CMake submodule or FetchContent but want only headers, link against `units::header_only` instead of `units::units`.
+
+        ```cmake
+        target_link_libraries(my_app PRIVATE units::header_only)
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      The header-only mode includes unit and measurement classes, arithmetic operations, and predefined unit constants. It does **not** include string conversion (`unit_from_string`, `measurement_from_string`, `to_string`) or root operations (`sqrt`, `root`). Those require the compiled library.
+    </Note>
+
+    ---
+
+    ## Method 2: CMake FetchContent
+
+    FetchContent downloads and configures the library as part of your CMake build. This is the recommended approach for projects that do not use Git submodules and want full compiled functionality including string conversions.
+
+    <Steps>
+      <Step title="Add FetchContent to your CMakeLists.txt">
+        ```cmake
+        include(FetchContent)
+        FetchContent_Declare(units
+          GIT_REPOSITORY https://github.com/LLNL/units.git
+          GIT_TAG        main
+        )
+        FetchContent_MakeAvailable(units)
+        ```
+      </Step>
+      <Step title="Link against units::units">
+        ```cmake
+        target_link_libraries(my_app PRIVATE units::units)
+        ```
+      </Step>
+    </Steps>
+
+    ---
+
+    ## Method 3: Git submodule
+
+    Adding the library as a Git submodule gives you full version control over the dependency. This is how [HELICS](https://github.com/GMLC-TDC/HELICS) integrates the library.
+
+    <Steps>
+      <Step title="Add the submodule">
+        ```bash
+        git submodule add https://github.com/LLNL/units.git ThirdParty/units
+        git submodule update --init --recursive
+        ```
+      </Step>
+      <Step title="Configure CMake variables before add_subdirectory">
+        Set the variables your project needs before calling `add_subdirectory`. The HELICS project uses the following pattern to suppress installation and select the static library:
+
+        ```cmake
+        # Prevent units from installing its own targets
+        set(UNITS_INSTALL OFF CACHE INTERNAL "")
+
+        if(NOT CMAKE_CXX_STANDARD)
+            set(CMAKE_CXX_STANDARD 17)
+        endif()
+
+        set(UNITS_BUILD_OBJECT_LIBRARY  OFF CACHE INTERNAL "")
+        set(UNITS_BUILD_STATIC_LIBRARY  ON  CACHE INTERNAL "")
+        set(UNITS_BUILD_SHARED_LIBRARY  OFF CACHE INTERNAL "")
+        set(UNITS_BUILD_CONVERTER_APP   OFF CACHE INTERNAL "")
+        set(UNITS_BUILD_WEBSERVER       OFF CACHE INTERNAL "")
+        set(UNITS_CLANG_TIDY_OPTIONS    ""  CACHE INTERNAL "")
+        set(UNITS_BUILD_FUZZ_TARGETS    OFF CACHE INTERNAL "")
+
+        add_subdirectory(
+            "${PROJECT_SOURCE_DIR}/ThirdParty/units"
+            "${PROJECT_BINARY_DIR}/ThirdParty/units"
+        )
+        ```
+      </Step>
+      <Step title="Link against units::units">
+        ```cmake
+        target_link_libraries(my_app PUBLIC units::units)
+        ```
+      </Step>
+    </Steps>
+
+    ---
+
+    ## Method 4: Standalone build and install
+
+    Build the library as a standalone package and install it system-wide or into a prefix, then consume it with `find_package`.
+
+    <Steps>
+      <Step title="Clone and configure">
+        ```bash
+        git clone https://github.com/LLNL/units.git
+        cmake -S units -B build -DCMAKE_BUILD_TYPE=Release
+        ```
+
+        To build a shared library instead of the default static library:
+
+        ```bash
+        cmake -S units -B build -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
+        ```
+      </Step>
+      <Step title="Build and install">
+        ```bash
+        cmake --build build
+        cmake --install build --prefix /usr/local
+        ```
+      </Step>
+      <Step title="Consume with find_package">
+        ```cmake
+        find_package(units REQUIRED)
+        target_link_libraries(my_app PRIVATE units::units)
+        ```
+      </Step>
+    </Steps>
+
+    ---
+
+    ## CMake targets reference
+
+    | Target | Description |
+    |---|---|
+    | `units::units` | The compiled static or shared library. Provides full functionality including string conversions and root operations. |
+    | `units::header_only` | Header-only interface target. Always generated. Does not include string conversions or root operations. |
+    | `units::module` | Experimental C++20 module target. Available when `UNITS_BUILD_CXX_MODULE=ON` and CMake ≥ 3.28. |
+
+    To use the C++20 module target:
+
+    ```cmake
+    target_link_libraries(my_app PRIVATE units::module)
+    target_compile_features(my_app PRIVATE cxx_std_20)
+    ```
+
+    ```cpp
+    import units;
+
+    int main()
+    {
+        auto speed = 12.0 * units::m / units::s;
+        return (speed.units() == units::m / units::s) ? 0 : 1;
+    }
+    ```
+
+    <Note>
+      Target names can be changed by setting `-DUNITS_CMAKE_PROJECT_NAME=<name>` at configure time. For example, `-DUNITS_CMAKE_PROJECT_NAME=LLNL-UNITS` produces targets `llnl-units::units` and `llnl-units::header_only`.
+    </Note>
+  </Tab>
+  <Tab title="Python">
+    ## Install from PyPI
+
+    The Python wrapper is available as `units-llnl` on PyPI. It wraps the compiled C++ library using [nanobind](https://github.com/wjakob/nanobind) and requires Python 3.10 or later.
+
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install units-llnl
+        ```
+      </Step>
+      <Step title="Verify the installation">
+        ```python
+        from units_llnl import Unit, Measurement
+
+        u = Unit("m/s")
+        print(u)  # "m/s"
+
+        m = Measurement("10 km")
+        print(m.value_as("m"))  # 10000.0
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      The Python library exposes a subset of the C++ library focused on unit conversions, string operations, and basic measurement arithmetic. The full C++ API surface — including `uncertain_measurement`, `fixed_measurement`, and low-level unit construction — is available only in the C++ library.
+    </Note>
+
+    ---
+
+    ## Build the Python library from source
+
+    If you need to build from source (for example, to use a modified version of the library):
+
+    <Steps>
+      <Step title="Install build dependencies">
+        ```bash
+        pip install scikit-build-core nanobind
+        ```
+      </Step>
+      <Step title="Clone and build">
+        ```bash
+        git clone https://github.com/LLNL/units.git
+        cd units
+        pip install .
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Selecting CMake build options
+
+The following CMake variables are most commonly needed when integrating the library into a larger project. See the [CMake variables reference](/reference/cmake-variables) for the complete list.
+
+| Variable | Default | Description |
+|---|---|---|
+| `UNITS_HEADER_ONLY` | `OFF` | Expose only the header-only target. Sets both library options to `OFF`. |
+| `UNITS_BUILD_STATIC_LIBRARY` | `ON` | Build a static library. |
+| `UNITS_BUILD_SHARED_LIBRARY` | `OFF` | Build a shared library. Cannot be set alongside static. |
+| `UNITS_BUILD_OBJECT_LIBRARY` | `OFF` | Build an object library. Only available as a subproject. |
+| `UNITS_INSTALL` | `ON` (standalone), `OFF` (subproject) | Generate install targets. Disable when using as a submodule. |
+| `UNITS_BUILD_CXX_MODULE` | `OFF` | Build the experimental C++20 module target. Requires CMake ≥ 3.28. |
+| `UNITS_NAMESPACE` | `units` | Override the top-level namespace. Useful when `units` conflicts with another library. |
+| `UNITS_BASE_TYPE` | (4-byte default) | Set to `uint64_t` for expanded unit power ranges, at the cost of 4 extra bytes per unit. |

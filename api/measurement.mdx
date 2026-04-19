@@ -1,0 +1,292 @@
+---
+title: "measurement types — C++ API reference"
+description: "Reference for measurement, precise_measurement, fixed_measurement, and fixed_precise_measurement: value-unit pairs with runtime arithmetic and conversion."
+keywords: ["measurement", "precise_measurement", "fixed_measurement", "C++ API", "llnl units", "convert"]
+---
+
+The llnl/units library provides four measurement types that bundle a numeric value together with a unit, enabling arithmetic and unit conversion at runtime. All four share a common interface but differ in their multiplier precision, whether the unit is fixed at construction, and their total size.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+measurement   length = 45.0 * m;
+measurement   area   = length * (20.0 * m);          // 900 m²
+std::cout << area.convert_to(ft.pow(2)) << "\n";     // 9687.5... ft²
+```
+
+<Tabs>
+  <Tab title="measurement">
+
+## `measurement`
+
+A 16-byte type holding a `double` value paired with a `unit`. The unit can change as a result of arithmetic. Addition and subtraction between `measurement` and bare `double` are not defined, because the unit context would be ambiguous.
+
+### Constructors
+
+<ResponseField name="measurement(double val, unit u)" type="constructor">
+  The primary constructor. Stores `val` as the numeric quantity measured in units `u`.
+
+  ```cpp
+  measurement speed(30.0, m / s);
+  measurement temp(100.0, degC);
+  ```
+</ResponseField>
+
+The copy constructor, copy-assignment, and default constructor are also available.
+
+### Methods
+
+<ResponseField name="value()" type="double const">
+  Returns the raw numeric value in the current unit basis.
+
+  ```cpp
+  measurement d(5.0, km);
+  double v = d.value(); // 5.0
+  ```
+</ResponseField>
+
+<ResponseField name="units()" type="unit const">
+  Returns the unit used as the basis for the stored value.
+
+  ```cpp
+  measurement d(5.0, km);
+  assert(d.units() == km);
+  ```
+</ResponseField>
+
+<ResponseField name="convert_to(unit target)" type="measurement const">
+  Returns a new measurement whose value has been rescaled to `target`. No data is lost as long as `target` is convertible from the current unit.
+
+  ```cpp
+  measurement d(5.0, km);
+  measurement d_m = d.convert_to(m);  // 5000.0 m
+  ```
+</ResponseField>
+
+<ResponseField name="convert_to_base()" type="measurement const">
+  Converts to the base unit of the same dimension (multiplier becomes 1.0).
+
+  ```cpp
+  measurement d(5.0, km);
+  measurement d_base = d.convert_to_base(); // 5000.0 m
+  ```
+</ResponseField>
+
+<ResponseField name="as_unit()" type="unit const">
+  Packages the entire measurement as a single `unit` whose multiplier encodes both the original unit's multiplier and the numeric value.
+
+  ```cpp
+  measurement d(10.0, m);
+  unit u = d.as_unit(); // unit with multiplier 10.0 and base of meters
+  ```
+</ResponseField>
+
+<ResponseField name="value_as(unit target)" type="double const">
+  Returns the numeric value as if measured in `target`. Equivalent to `convert_to(target).value()`.
+
+  ```cpp
+  measurement d(5.0, km);
+  double meters = d.value_as(m); // 5000.0
+  ```
+</ResponseField>
+
+### Operators
+
+```
++   -   *   /          measurement ↔ measurement
+*   /   %              measurement ↔ double (double ↔ measurement for * and /)
+==  !=  <   >  <=  >=  comparison operators
+double * unit           produces measurement
+unit   * double         produces measurement
+unit   / double         produces measurement
+double / unit           produces measurement
+```
+
+  </Tab>
+  <Tab title="precise_measurement">
+
+## `precise_measurement`
+
+Identical to `measurement` but uses a `precise_unit` instead of `unit`. The numeric value is still a `double`, so the additional precision comes entirely from the multiplier stored in `precise_unit`.
+
+### Constructors
+
+<ResponseField name="precise_measurement(double val, precise_unit u)" type="constructor">
+  Stores `val` as the quantity measured in `u`.
+
+  ```cpp
+  precise_measurement dist(1234.5678901234, precise::m);
+  ```
+</ResponseField>
+
+### Methods
+
+All methods are the same as `measurement` but operate on `precise_unit`:
+
+<ResponseField name="value()" type="double const">Raw numeric value.</ResponseField>
+<ResponseField name="units()" type="precise_unit const">Unit basis.</ResponseField>
+<ResponseField name="convert_to(precise_unit target)" type="precise_measurement const">Rescaled copy.</ResponseField>
+<ResponseField name="convert_to_base()" type="precise_measurement const">Convert to base unit.</ResponseField>
+<ResponseField name="as_unit()" type="precise_unit const">Pack as a single unit.</ResponseField>
+<ResponseField name="value_as(precise_unit target)" type="double const">Value in target units.</ResponseField>
+
+### Interoperability
+
+`precise_measurement` can be converted down to `measurement` using `measurement_cast`:
+
+```cpp
+precise_measurement pm(5.0, precise::km);
+measurement m_cast = measurement_cast(pm); // converts precise_unit → unit
+```
+
+  </Tab>
+  <Tab title="fixed_measurement">
+
+## `fixed_measurement`
+
+A 16-byte type identical in layout to `measurement` but with the unit locked at construction. Any assignment or arithmetic that would produce the same unit results in a `fixed_measurement`; operations that would change the unit fall back to a plain `measurement`.
+
+`fixed_measurement` adds support for arithmetic with bare `double` values, since the unit is always known:
+
+```cpp
+fixed_measurement width(3.0, m);
+fixed_measurement total = width + 2.0; // 5.0 m  — allowed because unit is fixed
+```
+
+### Constructors
+
+<ResponseField name="fixed_measurement(double val, unit u)" type="constructor">
+  Constructs with a value and a permanently-bound unit. All future assignments will convert the incoming value to match `u`.
+
+  ```cpp
+  fixed_measurement altitude(1000.0, m);
+  altitude = 2.0 * km;  // stored as 2000.0 m (auto-converted)
+  ```
+</ResponseField>
+
+### Methods
+
+<ResponseField name="value()" type="double const">Value in the fixed unit.</ResponseField>
+<ResponseField name="units()" type="unit const">The immutable unit.</ResponseField>
+<ResponseField name="convert_to(unit target)" type="measurement const">Returns a plain `measurement` in `target`.</ResponseField>
+<ResponseField name="convert_to_base()" type="measurement const">Convert to base unit as plain `measurement`.</ResponseField>
+<ResponseField name="as_unit()" type="unit const">Pack as a single unit.</ResponseField>
+<ResponseField name="value_as(unit target)" type="double const">Value in target units.</ResponseField>
+
+### Additional operators
+
+In addition to the operators on `measurement`, `fixed_measurement` allows:
+
+```
+fixed_measurement + double   →  fixed_measurement
+fixed_measurement - double   →  fixed_measurement
+double + fixed_measurement   →  fixed_measurement
+double - fixed_measurement   →  fixed_measurement
+```
+
+### Implicit conversion
+
+`fixed_measurement` is implicitly convertible to `measurement`:
+
+```cpp
+void process(measurement m);
+fixed_measurement fm(10.0, m);
+process(fm); // implicit conversion
+```
+
+  </Tab>
+  <Tab title="fixed_precise_measurement">
+
+## `fixed_precise_measurement`
+
+The 24-byte high-precision variant of `fixed_measurement`. Uses `precise_unit` as the bound unit type and `double` for the value. Implicit conversion to `precise_measurement` is supported.
+
+### Constructors
+
+<ResponseField name="fixed_precise_measurement(double val, precise_unit u)" type="constructor">
+  Constructs with a value and a permanently-bound `precise_unit`.
+
+  ```cpp
+  fixed_precise_measurement voltage(230.0, precise::V);
+  ```
+</ResponseField>
+
+### Methods
+
+<ResponseField name="value()" type="double const">Value in the fixed precise unit.</ResponseField>
+<ResponseField name="units()" type="precise_unit const">The immutable precise unit.</ResponseField>
+<ResponseField name="convert_to(precise_unit target)" type="precise_measurement const">Rescaled copy as `precise_measurement`.</ResponseField>
+<ResponseField name="convert_to_base()" type="precise_measurement const">Convert to base unit.</ResponseField>
+<ResponseField name="as_unit()" type="precise_unit const">Pack as a single precise unit.</ResponseField>
+<ResponseField name="value_as(precise_unit target)" type="double const">Value in target units.</ResponseField>
+
+### Size
+
+At 24 bytes, `fixed_precise_measurement` is the largest of the four measurement types — 8 bytes for `double` value, 16 bytes for `precise_unit`.
+
+  </Tab>
+</Tabs>
+
+---
+
+## Free functions
+
+### Casting
+
+<ResponseField name="measurement_cast(precise_measurement)" type="measurement">
+  Converts a `precise_measurement` to a `measurement` by down-casting the `precise_unit` to a `unit` via `unit_cast`.
+</ResponseField>
+
+<ResponseField name="measurement_cast(fixed_precise_measurement|fixed_measurement)" type="fixed_measurement">
+  Converts a fixed precise measurement to a `fixed_measurement`.
+</ResponseField>
+
+### Mathematical operations
+
+<ResponseField name="pow(measurement m, int power)" type="measurement">
+  Returns a measurement raised to an integer power. Both the value and unit are raised to `power`.
+
+  ```cpp
+  measurement side(3.0, m);
+  measurement area = pow(side, 2); // 9.0 m²
+  ```
+</ResponseField>
+
+<ResponseField name="root(measurement m, int power)" type="measurement">
+  Returns the `power`-th root of a measurement. The unit must have a valid root (all exponents divisible by `power`).
+
+  ```cpp
+  measurement area(9.0, m.pow(2));
+  measurement side = root(area, 2); // 3.0 m
+  ```
+</ResponseField>
+
+<ResponseField name="sqrt(measurement m)" type="measurement">
+  Convenience wrapper for `root(m, 2)`.
+
+  ```cpp
+  measurement side = sqrt(9.0 * m.pow(2)); // 3.0 m
+  ```
+</ResponseField>
+
+### Validation
+
+<ResponseField name="is_valid(measurement m)" type="bool">
+  Returns `true` when the underlying unit is valid (not an error/NaN unit) and the value is not NaN.
+</ResponseField>
+
+<ResponseField name="isnormal(measurement m)" type="bool">
+  Returns `true` when the underlying unit is normal (per `is_normal(unit)`) and the value is neither NaN, infinity, nor a subnormal. Zero values are allowed.
+</ResponseField>
+
+---
+
+## Type summary
+
+| Type | Size | Unit type | Unit fixed? |
+|---|---|---|---|
+| `measurement` | 16 B | `unit` (float mult.) | No |
+| `precise_measurement` | 16 B | `precise_unit` (double mult.) | No |
+| `fixed_measurement` | 16 B | `unit` (float mult.) | Yes |
+| `fixed_precise_measurement` | 24 B | `precise_unit` (double mult.) | Yes |

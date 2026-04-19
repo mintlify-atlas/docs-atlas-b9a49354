@@ -1,0 +1,171 @@
+---
+title: "How units are encoded internally"
+description: "Units pack 10 base-dimension exponents and 4 flag bits into 4 bytes. A 64-bit compile option doubles every field's range at the cost of larger objects."
+keywords: ["unit_base", "unit_data", "bitfield", "SI", "radians", "currency", "count", "per_unit", "i_flag", "e_flag", "equation", "UNITS_BASE_TYPE"]
+---
+
+Every `unit` and `precise_unit` object holds a `detail::unit_data` structure that encodes the physical dimension as a set of signed integer exponents — one for each supported base dimension — packed into a 32-bit integer. Understanding this layout explains both the capabilities of the library and where its limits lie.
+
+## The 10 base dimensions
+
+The library supports the seven SI base units plus three additional dimensions that appear frequently in engineering and scientific software:
+
+<CardGroup cols={2}>
+  <Card title="SI base units" icon="flask">
+    meter (m), kilogram (kg), second (s), ampere (A), kelvin (K), mole (mol), candela (cd)
+  </Card>
+  <Card title="Extended dimensions" icon="plus">
+    radian (rad), currency ($), count (cnt)
+  </Card>
+</CardGroup>
+
+<Info>
+Currency, count, and radians occupy dedicated dimension slots even though they are not formal SI units. Currency appears often enough in multi-domain engineering software (e.g., $/kWh) to justify a dedicated bit range. Radians and count are distinct from true unitless quantities — a radian represents rotation around a circle, and count distinguishes items from moles even though they are theoretically equivalent. The `convert` functions will cross-convert between count and mole when necessary.
+</Info>
+
+## Bit representation
+
+The bit fields are laid out in a fixed order that totals exactly 32 bits (28 for the signed exponents, 4 for the flags):
+
+| Base dimension | Bits | Representable range | Normal use range | Intermediate operations |
+|---|---|---|---|---|
+| meter | 4 | \[-8, +7\] | \[-4, +4\] | \[-6, +6\] |
+| kilogram | 3 | \[-4, +3\] | \[-1, +1\] | \[-2, +2\] |
+| second | 4 | \[-8, +7\] | \[-4, +4\] | \[-6, +6\] |
+| ampere | 3 | \[-4, +3\] | \[-2, +2\] | — |
+| kelvin | 3 | \[-4, +3\] | \[-4, +1\] | — |
+| mole | 2 | \[-2, +1\] | \[-1, +1\] | — |
+| candela | 2 | \[-2, +1\] | \[-1, +1\] | — |
+| currency | 2 | \[-2, +1\] | \[-1, +1\] | — |
+| count | 2 | \[-2, +1\] | \[-1, +1\] | — |
+| radians | 3 | \[-4, +3\] | \[-2, +2\] | — |
+
+The field widths were chosen after surveying the actual powers used across scientific and engineering disciplines. Meter and second receive 4 bits each because they appear in complex combinations (m⁴ in moment-of-inertia formulas, s⁻⁴ in some spectral density units). Kilogram rarely appears squared in physical quantities, so 3 bits suffice even accounting for intermediate results. Mole and candela have 2 bits because their practical range is narrow.
+
+The concrete bit layout from the source:
+
+```cpp
+// detail::unit_data bitfield (32-bit default mode)
+signed int meter_    : 4;   // bits  0– 3
+signed int second_   : 4;   // bits  4– 7
+signed int kilogram_ : 3;   // bits  8–10
+signed int ampere_   : 3;   // bits 11–13
+signed int candela_  : 2;   // bits 14–15
+signed int kelvin_   : 3;   // bits 16–18
+signed int mole_     : 2;   // bits 19–20
+signed int radians_  : 3;   // bits 21–23
+signed int currency_ : 2;   // bits 24–25
+signed int count_    : 2;   // bits 26–27
+unsigned int per_unit_ : 1; // bit  28
+unsigned int i_flag_   : 1; // bit  29
+unsigned int e_flag_   : 1; // bit  30
+unsigned int equation_ : 1; // bit  31
+```
+
+## The 4 flags
+
+The upper 4 bits of the 32-bit word are used for flags rather than dimension exponents:
+
+<AccordionGroup>
+  <Accordion title="per_unit (bit 28)">
+    Marks units that represent a dimensionless ratio relative to some nominal base value — the "per-unit" convention common in power systems analysis. The flag is OR'd during multiplication and division and passed through `pow`.
+
+    Example: reactive power in per-unit form.
+  </Accordion>
+  <Accordion title="i_flag (bit 29)">
+    Indicates imaginary or directional units, modeled on the behavior of the imaginary number `i`. When two units with `i_flag` set are multiplied, the flag XORs to zero — analogous to `i × i = -1` clearing the imaginary component. This makes it useful for reactive power (var) and compass directions where squaring should remove the flag.
+  </Accordion>
+  <Accordion title="e_flag (bit 30)">
+    A general-purpose discriminant used to differentiate otherwise-identical unit strings and to tag equation units. It OR's during multiplication but XOR's during division. For even powers it is cleared (unless `i_flag` is also set).
+  </Accordion>
+  <Accordion title="equation (bit 31)">
+    Marks equation-style units whose conversions require a non-linear function rather than a simple multiplier ratio. Examples include decibels (dB), nepers, and meteorological scales (Beaufort, Fujita, Richter, Saffir-Simpson). The flag is OR'd during multiplication and passed through `pow`.
+  </Accordion>
+</AccordionGroup>
+
+## What happens when powers exceed the range
+
+Signed bitfields wrap on overflow using two's complement arithmetic — the same behavior as a signed integer overflow in C++. The operation is always defined (no undefined behavior) but produces a numerically wrong exponent.
+
+<Warning>
+C++ evaluates expressions following operator precedence. If any **intermediate** sub-expression produces an exponent that exceeds the representable range, it wraps even if the final result would be in range. For example, computing `(m.pow(6) / m.pow(3))` is safe, but constructing an intermediate `m.pow(8)` is not — meter only has 4 bits and +7 is the maximum. Structure complex unit expressions to avoid intermediate overflow.
+</Warning>
+
+## Accessing individual exponents
+
+`detail::unit_data` provides constexpr getters for every field:
+
+```cpp
+unit force = kg * m / s.pow(2);
+auto base = force.base_units();
+
+int m_power  = base.meter();   //  1
+int kg_power = base.kg();      //  1
+int s_power  = base.second();  // -2
+```
+
+Boolean getters for flags:
+
+```cpp
+base.is_per_unit(); // false
+base.has_i_flag();  // false
+base.has_e_flag();  // false
+base.is_equation(); // false
+```
+
+## Arithmetic on unit_data
+
+When two units are multiplied, the library adds their exponents and OR/XOR-combines their flags according to the rules in the table above. Division subtracts exponents. Inversion negates all exponents (flags are passed through). `pow(n)` multiplies every exponent by `n`.
+
+```cpp
+// Under the hood:
+// (m / s) * s  →  meter: 1+0=1, second: -1+1=0  →  m
+auto a = m / s;
+auto b = a * s;
+// b == m
+```
+
+## Floating-point precision considerations
+
+Each `unit` carries a `float` multiplier (4 bytes, ~7 decimal digits). Each `precise_unit` carries a `double` multiplier (8 bytes, ~13 decimal digits). These multipliers accumulate floating-point rounding errors over chains of arithmetic operations in the same way as ordinary C++ floating-point code.
+
+Equality comparison accounts for this by rounding multipliers to an appropriate number of significant digits before comparing. The tolerance is approximately half the last significant digit, so values that differ by a subnormal amount compare equal.
+
+## Expanded range with `UNITS_BASE_TYPE`
+
+By default `UNITS_BASE_TYPE` is `uint32_t`, giving the 4-byte layout described above. Setting it to `uint64_t` at compile time doubles the storage to 8 bytes for `unit_data`, which in turn doubles the bit width of every field:
+
+| Dimension | Default bits | 64-bit bits | 64-bit range |
+|---|---|---|---|
+| meter | 4 | 8 | \[-128, +127\] |
+| second | 4 | 8 | \[-128, +127\] |
+| kilogram | 3 | 6 | \[-32, +31\] |
+| ampere | 3 | 6 | \[-32, +31\] |
+| kelvin | 3 | 6 | \[-32, +31\] |
+| mole | 2 | 4 | \[-8, +7\] |
+| candela | 2 | 4 | \[-8, +7\] |
+| currency | 2 | 6 | \[-32, +31\] |
+| count | 2 | 6 | \[-32, +31\] |
+| radians | 3 | 6 | \[-32, +31\] |
+
+The 64-bit mode doubles the size of `unit` to 16 bytes and `precise_unit` to 24 bytes, with corresponding increases in `measurement` sizes. Enable it in your CMake configuration:
+
+```cmake
+# CMakeLists.txt
+set(UNITS_BASE_TYPE uint64_t)
+```
+
+See [CMake variables](/reference/cmake-variables) for the full list of build-time options.
+
+## The error unit
+
+Constructing `unit_data` with `nullptr` sets all exponents to their most-negative representable value and sets all flags to 1. This serves as a sentinel "error" or "invalid" value. The free functions `is_error`, `is_valid`, and `is_default` test for special unit states:
+
+```cpp
+unit bad = units::error;        // the error sentinel unit
+bool err = is_error(bad);       // true
+bool valid = is_valid(bad);     // false
+
+unit def = units::defunit;      // the default (unspecified) unit
+bool dflt = is_default(def);    // true
+```

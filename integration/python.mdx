@@ -1,0 +1,251 @@
+---
+title: "Using Units from Python with units-llnl"
+description: "Install the units-llnl Python package from PyPI or build it from source, then use the Unit and Measurement classes to convert physical quantities."
+---
+
+The `units-llnl` package is a Python wrapper around the C++ Units library, built with [nanobind](https://github.com/wjakob/nanobind). It exposes the most common operations — constructing units from strings, converting values, and doing arithmetic on measurements — without requiring any C++ code. The wrapper maps to the `precise_unit` and `precise_measurement` types from the C++ library.
+
+## Installation
+
+<Tabs>
+  <Tab title="From PyPI">
+    Install the package directly from PyPI. Python 3.10 or later is required.
+
+    ```bash
+    pip install units-llnl
+    ```
+  </Tab>
+  <Tab title="From source with CMake">
+    If you need to build a modified version of the library or integrate the Python module into a larger CMake build, enable `UNITS_BUILD_PYTHON_LIBRARY`.
+
+    <Steps>
+      <Step title="Install build dependencies">
+        ```bash
+        pip install scikit-build-core nanobind
+        ```
+      </Step>
+      <Step title="Configure and build">
+        ```bash
+        git clone https://github.com/LLNL/units.git
+        cmake -S units -B build \
+          -DUNITS_BUILD_PYTHON_LIBRARY=ON \
+          -DCMAKE_BUILD_TYPE=Release
+        cmake --build build
+        ```
+
+        Or use pip to drive the full build and install in one step:
+
+        ```bash
+        git clone https://github.com/LLNL/units.git
+        cd units
+        pip install .
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+---
+
+## The `Unit` class
+
+`Unit` objects represent a physical unit. They are immutable — methods that would modify a unit return a new `Unit` instead. Internally each `Unit` maps to a `precise_unit` in C++.
+
+### Constructors
+
+```python
+from units_llnl import Unit
+
+# Construct from a unit string
+u1 = Unit("m")
+u2 = Unit("km/h")
+
+# Construct with a commodity string
+u3 = Unit("gal", "gasoline")
+
+# Construct as a scaled version of another unit
+u4 = Unit(1000.0, Unit("m"))  # equivalent to km
+```
+
+### Key methods
+
+| Method | Description |
+|---|---|
+| `convert(value, unit_out)` | Convert `value` from this unit to `unit_out`. Accepts a `Unit` or a unit string. |
+| `is_convertible_to(other)` | Return `True` if this unit can be converted to `other`. |
+| `root(power)` | Return a new unit taken to the given integer root. |
+| `sqrt()` | Return the square root of the unit. |
+| `is_valid()` | Return `True` if the unit is a valid, non-error unit. |
+| `is_per_unit()` | Return `True` if the unit has the per-unit flag set. |
+
+```python
+from units_llnl import Unit
+
+u_m  = Unit("m")
+u_cm = Unit("cm")
+
+# Convert 10 m to cm
+result = u_m.convert(10, u_cm)
+assert result == 1000.0
+
+# Keyword arguments also work
+result2 = u_m.convert(value=20, unit_out=u_cm)
+assert result2 == 2000.0
+
+# Check convertibility
+print(Unit("m").is_convertible_to(Unit("ft")))   # True
+print(Unit("m").is_convertible_to(Unit("kg")))   # False
+```
+
+### Operators
+
+```python
+from units_llnl import Unit
+
+m  = Unit("m")
+s  = Unit("s")
+
+# Multiply and divide units to produce new units
+velocity_unit = m / s      # m/s
+area_unit     = m * m      # m²
+inv_unit      = ~m         # 1/m
+sq_unit       = m ** 2     # m²
+
+# Multiply a unit by a float to produce a Measurement
+distance = 5.0 * m         # Measurement(5.0, "m")
+```
+
+f-string formatting returns the canonical string representation of the unit:
+
+```python
+u = Unit("km/h")
+print(f"Unit: {u}")  # "Unit: km/h"
+```
+
+---
+
+## The `Measurement` class
+
+`Measurement` pairs a numeric value with a `Unit`. Arithmetic operators carry units through automatically. A `Measurement` maps to `precise_measurement` in C++.
+
+### Constructors
+
+```python
+from units_llnl import Measurement, Unit
+
+# From a measurement string
+m1 = Measurement("10 m")
+m2 = Measurement("2.5 s")
+
+# From a value and a Unit object
+m3 = Measurement(9.81, Unit("m/s^2"))
+
+# From a value and a unit string
+m4 = Measurement(100.0, "km/h")
+```
+
+### Key methods
+
+| Method | Description |
+|---|---|
+| `value_as(unit)` | Return the numeric value converted to `unit`. Accepts a `Unit` or string. |
+| `convert_to(unit)` | Return a new `Measurement` expressed in `unit`. |
+| `convert_to_base()` | Return a new `Measurement` in base SI units (multiplier = 1.0). |
+| `is_valid()` | Return `True` if the measurement is valid (not an error or NaN). |
+| `is_close(other)` | Return `True` if the two measurements are approximately equal. |
+
+```python
+from units_llnl import Measurement
+
+speed = Measurement("45 mph")
+
+# Get the value in a different unit
+mps = speed.value_as("m/s")
+print(mps)  # ≈ 20.1168
+
+# Get a new Measurement in a different unit
+speed_kph = speed.convert_to("km/h")
+print(speed_kph)  # ≈ 72.4205 km/h
+
+# Convert to base SI units
+speed_base = speed.convert_to_base()
+print(speed_base)  # ≈ 20.1168 m/s
+```
+
+### Operators
+
+```python
+from units_llnl import Measurement
+
+m1 = Measurement("10 m")
+m2 = Measurement("2.5 s")
+
+# Arithmetic on measurements
+m3 = m1 / m2
+m4 = Measurement("4.0 m/s")
+assert m3 == m4
+
+# Addition and subtraction require compatible units
+a = Measurement("100 m")
+b = Measurement("1 km")
+total = a + b   # 1100 m
+
+# Exponentiation
+area = Measurement("5.0 m") ** 2  # 25.0 m²
+
+# Inversion
+inv = ~Measurement("2.0 s")  # 0.5 1/s
+```
+
+f-string formatting supports several format specifiers:
+
+```python
+m = Measurement("1500 m")
+
+print(f"{m}")           # "1500 m"        — value and unit
+print(f"{m:-}")         # "1500"          — value only, no unit
+print(f"{m:km}")        # "1.5 km"        — converted to km
+print(f"{m:-km}")       # "1.5"           — converted to km, value only
+```
+
+---
+
+## Module-level functions
+
+These functions operate without constructing a `Unit` or `Measurement` object first.
+
+| Function | Description |
+|---|---|
+| `convert(value, unit_in, unit_out)` | Convert `value` from one unit to another. Units can be `Unit` objects or strings. |
+| `convert_pu(value, unit_in, unit_out, base)` | Convert a value when one unit is a per-unit quantity. `base` is the base value for the per-unit conversion. |
+| `default_unit(unit_type)` | Return the default `Unit` for a measurement type string such as `"length"` or `"mass"`. |
+| `add_user_defined_unit(name, definition)` | Register a custom unit string for use in future string conversions. Accepts a unit string or `Unit` object as the definition. |
+| `add_units_from_file(path)` | Load a list of user-defined unit definitions from a file. |
+
+```python
+from units_llnl import convert, default_unit, add_user_defined_unit
+
+# Simple conversion
+speed_mps = convert(60.0, "km/h", "m/s")
+print(speed_mps)  # ≈ 16.6667
+
+# Default unit for a measurement category
+length_unit = default_unit("length")
+print(length_unit)  # "m"
+
+# Register a custom unit
+add_user_defined_unit("myunit", "3.5 m")
+from units_llnl import Unit
+u = Unit("myunit")
+print(u.convert(2.0, "m"))  # 7.0
+```
+
+---
+
+## Compatibility
+
+The Python wrapper is being developed to maintain compatibility with [quantity-dev](https://github.com/quantity-dev/metrology-apis) metrology APIs. This is a work in progress; the interface may evolve as the quantity-dev API stabilises.
+
+<Note>
+  The Python library exposes a focused subset of the C++ API. Types such as `uncertain_measurement`, `fixed_measurement`, and low-level `unit_base` manipulation are available only in the C++ library. Future versions of the Python wrapper may add `uncertain_measurement` support.
+</Note>

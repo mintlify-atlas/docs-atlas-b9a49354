@@ -1,80 +1,166 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Get started with the Units library"
+description: "Go from zero to a working unit conversion in minutes — install the library, include a header, parse a measurement string, and convert to your target unit."
 ---
 
-## Get started in three steps
+The fastest path to working code is a single header include and two function calls: `measurement_from_string` to parse user input and `value_as` to get the result in your target unit. This page walks through both C++ and Python from a clean start.
 
-Get your documentation site running locally and make your first customization.
+<Tabs>
+  <Tab title="C++">
+    <Steps>
+      <Step title="Add the library to your project">
+        The recommended approach for new projects is CMake FetchContent, which downloads and configures the library automatically. Alternatively, copy the headers directly for header-only use.
 
-### Step 1: Set up your local environment
+        <CodeGroup>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+        ```cmake FetchContent (CMakeLists.txt)
+        include(FetchContent)
+        FetchContent_Declare(units
+          GIT_REPOSITORY https://github.com/LLNL/units.git
+          GIT_TAG        main
+        )
+        FetchContent_MakeAvailable(units)
+        target_link_libraries(my_app PRIVATE units::units)
+        ```
 
-### Step 2: Deploy your changes
+        ```cmake Header-only (CMakeLists.txt)
+        # After copying units_decl.hpp, unit_definitions.hpp,
+        # units_util.hpp, and units.hpp into your project:
+        target_compile_definitions(my_app PRIVATE UNITS_HEADER_ONLY)
+        target_include_directories(my_app PRIVATE path/to/headers)
+        ```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+        </CodeGroup>
+      </Step>
+      <Step title="Include the header">
+        Add the primary header to your source file. All core types and functions are in the `units` namespace.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+        ```cpp
+        #include <units/units.hpp>
+        using namespace units;
+        ```
+      </Step>
+      <Step title="Parse a measurement from a string">
+        `measurement_from_string` converts any unit string — such as `"45 mph"` or `"9.8 m/s^2"` — into a typed `precise_measurement`. This is the primary entry point for handling user input or configuration file values.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+        ```cpp
+        auto meas = measurement_from_string("45 mph");
+        ```
+      </Step>
+      <Step title="Convert to your target unit">
+        Call `value_as` with the target unit to get the converted `double`. An invalid conversion returns `constants::invalid_conversion` (a `NaN`), so you can guard with `std::isnan`.
 
-### Step 3: Go live
+        ```cpp
+        double speed_mps = meas.value_as(precise::m / precise::s);
+        // speed_mps ≈ 20.1168
+        ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+        To check convertibility before converting:
+
+        ```cpp
+        if (!meas.units().is_convertible(precise::m / precise::s)) {
+            throw std::invalid_argument("incompatible units");
+        }
+        ```
+      </Step>
+      <Step title="Perform arithmetic with measurements">
+        Measurements support the standard arithmetic operators. Units are carried along automatically.
+
+        ```cpp
+        #include <units/units.hpp>
+        using namespace units;
+
+        measurement length1 = 45.0 * m;
+        measurement length2 = 20.0 * m;
+        measurement area    = length1 * length2;
+
+        std::cout << "the area is " << area
+                  << " or " << area.convert_to(ft.pow(2)) << ".\n";
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Python">
+    <Steps>
+      <Step title="Install the package">
+        The Python wrapper is available on PyPI as `units-llnl`. It requires Python 3.10 or later.
+
+        ```bash
+        pip install units-llnl
+        ```
+      </Step>
+      <Step title="Import and create a Unit">
+        Construct a `Unit` from any unit string. Units are immutable objects, similar to Python strings.
+
+        ```python
+        from units_llnl import Unit
+
+        u1 = Unit("m")
+        u2 = Unit("cm")
+        ```
+      </Step>
+      <Step title="Convert a value between units">
+        Call `.convert(value, unit_out)` on a unit to convert a numeric value. You can pass the target as a `Unit` object or a string.
+
+        ```python
+        v1 = u1.convert(10, u2)
+        assert v1 == 1000.0  # 10 m → 1000 cm
+        ```
+      </Step>
+      <Step title="Work with Measurement objects">
+        `Measurement` pairs a value with a unit. You can construct one from a string or from a value and unit, then do arithmetic directly.
+
+        ```python
+        from units_llnl import Measurement
+
+        m1 = Measurement("10 m")
+        m2 = Measurement("2.5 s")
+        m3 = m1 / m2
+        m4 = Measurement("4.0 m/s")
+        assert m3 == m4
+        ```
+
+        To extract the value in a specific unit:
+
+        ```python
+        speed = Measurement("45 mph")
+        mps = speed.value_as("m/s")
+        # mps ≈ 20.1168
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Complete C++ example
+
+The following is the canonical use case from the library documentation: a helper function that accepts a measurement string and returns the value in a standardized internal unit.
+
+```cpp
+#include <units/units.hpp>
+
+double GetInputValueAs(const std::string& input, units::precise_units out)
+{
+    auto meas = units::measurement_from_string(input);
+    return meas.value_as(out);
+}
+```
+
+The return value is `NaN` (`constants::invalid_conversion`) when the conversion is not possible, so callers can check with `std::isnan(result)`.
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation options" icon="download" href="/installation">
+    Header-only, FetchContent, submodule, standalone build, and pip — all installation methods in one place.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/units">
+    Learn the difference between `unit`, `precise_unit`, `measurement`, and `uncertain_measurement`.
+  </Card>
+  <Card title="String conversions" icon="arrow-right-arrow-left" href="/guides/string-conversions">
+    Understand parsing rules, flags, and how to handle ambiguous unit strings.
+  </Card>
+  <Card title="Math operations" icon="calculator" href="/guides/math-operations">
+    Perform arithmetic on measurements with automatic unit tracking and conversion.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

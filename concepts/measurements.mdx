@@ -1,0 +1,286 @@
+---
+title: "Measurement types: values with units"
+description: "Five types pair a numeric value with a unit. Fixed variants auto-convert assigned values. uncertain_measurement propagates uncertainty through arithmetic."
+keywords: ["measurement", "precise_measurement", "fixed_measurement", "fixed_precise_measurement", "value_as", "convert_to", "units"]
+---
+
+A measurement is a numerical value paired with a unit. The library provides five measurement types that differ in floating-point width, whether the unit is fixed, and whether the type tracks uncertainty. All types support the standard arithmetic operators and comparison operators.
+
+<CardGroup cols={2}>
+  <Card title="measurement" icon="ruler">
+    16 bytes. `double` value + `unit`. General-purpose type for most calculations.
+  </Card>
+  <Card title="precise_measurement" icon="ruler-combined">
+    24 bytes. `double` value + `precise_unit`. Used when string conversions or commodity tracking is needed.
+  </Card>
+  <Card title="fixed_measurement" icon="lock">
+    16 bytes. `double` value + constant `unit`. The unit cannot change; assignments auto-convert the value.
+  </Card>
+  <Card title="fixed_precise_measurement" icon="lock-keyhole">
+    24 bytes. `double` value + constant `precise_unit`. Precise variant of `fixed_measurement`.
+  </Card>
+  <Card title="uncertain_measurement" icon="chart-line">
+    16 bytes. `float` value + `float` uncertainty + `unit`. Propagates uncertainty through arithmetic using root-sum-of-squares by default.
+  </Card>
+</CardGroup>
+
+## Constructing measurements
+
+You can construct any measurement either via the constructor or by multiplying (or dividing) a unit by a `double`:
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+// Constructor form
+measurement meas(10.0, kg);
+measurement meas2(2.7, MW);
+
+// Operator form — more natural for inline expressions
+measurement length = 10.0 * m;
+measurement rate   = 5.3 / s;
+```
+
+Both forms produce identical objects. The operator form is preferred in expressions because it reads naturally.
+
+For `precise_measurement`, use the corresponding `precise::` constants:
+
+```cpp
+precise_measurement mp(10.0, precise::kg);
+
+// Convert down to a regular measurement when needed
+measurement meas2 = measurement_cast(mp);
+```
+
+## Measurement methods
+
+<AccordionGroup>
+  <Accordion title="value()">
+    Returns the raw numerical value as a `double`, without any unit conversion.
+
+    ```cpp
+    measurement dist = 3.5 * km;
+    double raw = dist.value(); // 3.5  (in km, not m)
+    ```
+  </Accordion>
+  <Accordion title="units()">
+    Returns the `unit` (or `precise_unit`) associated with the measurement.
+
+    ```cpp
+    measurement speed = 60.0 * mph;
+    unit u = speed.units(); // mph
+    ```
+  </Accordion>
+  <Accordion title="value_as(unit)">
+    Converts the measurement and returns the value in the target unit as a `double`. Returns `constants::invalid_conversion` (a `NaN`) if the units are not convertible.
+
+    ```cpp
+    measurement speed = 60.0 * mph;
+    double mps = speed.value_as(m / s); // ≈ 26.8224
+    ```
+  </Accordion>
+  <Accordion title="convert_to(unit)">
+    Returns a new measurement with the same physical quantity expressed in the target unit.
+
+    ```cpp
+    measurement area = 45.0 * m * 20.0 * m;
+    measurement area_ft2 = area.convert_to(ft.pow(2));
+    ```
+  </Accordion>
+  <Accordion title="convert_to_base()">
+    Strips the multiplier from the unit and returns an equivalent measurement whose unit has a multiplier of 1.0 (i.e., pure SI base units with no scaling factor).
+
+    ```cpp
+    measurement d = 5.0 * km;
+    measurement d_si = d.convert_to_base(); // 5000.0 m
+    ```
+  </Accordion>
+  <Accordion title="as_unit()">
+    Folds the numerical value into the unit multiplier and returns the result as a single `unit`. Useful for creating scaled unit constants from a measurement.
+
+    ```cpp
+    measurement a = 10.0 * m;
+    unit u = a.as_unit(); // a unit with multiplier 10.0 and base meters
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Arithmetic operators
+
+All measurement types support `*`, `/`, `+`, `-`, and their compound assignment equivalents. The result type follows these rules:
+
+- `measurement * measurement` → `measurement` (values multiplied, units multiplied)
+- `measurement / measurement` → `measurement` (values divided, units divided)
+- `measurement + measurement` → `measurement` (right-hand side is auto-converted to the left-hand unit)
+- `measurement - measurement` → `measurement` (same auto-conversion)
+- `measurement * double` → `measurement` (unit unchanged)
+- `measurement / double` → `measurement` (unit unchanged)
+- `double * unit` → `measurement`
+- `double / unit` → `measurement` (unit is inverted)
+
+```cpp
+measurement length1 = 45.0 * m;
+measurement length2 = 20.0 * m;
+measurement area    = length1 * length2; // 900 m²
+
+// Adding measurements auto-converts the rhs to the lhs unit
+measurement total_km = 1.0 * km + 500.0 * m; // result in km
+```
+
+<Note>
+For `measurement` and `precise_measurement`, `+` and `-` with a raw `double` are **not** defined. The unit would be ambiguous — does `dist + 3.0` mean 3 meters, 3 feet, or something else? Use `fixed_measurement` when you need to add or subtract plain numbers.
+</Note>
+
+Comparison operators (`==`, `!=`, `>`, `<`, `>=`, `<=`) are defined for all measurement types. Equality uses the same rounded comparison as unit equality: values are compared to approximately 6–7 significant figures for `measurement` and 12–13 figures for `precise_measurement`.
+
+## `measurement` vs `precise_measurement`
+
+<Tabs>
+  <Tab title="measurement">
+    Uses `unit` for the unit component. Suitable for most engineering calculations where ~7 significant figures is sufficient.
+
+    ```cpp
+    measurement meas(10.0, kg);
+    measurement length = 3.0 * m;
+    measurement velocity = length / (2.0 * s); // 1.5 m/s
+    ```
+
+    Size: **16 bytes** (8-byte `double` + 8-byte `unit`)
+  </Tab>
+  <Tab title="precise_measurement">
+    Uses `precise_unit` for the unit component. String conversion functions return `precise_measurement` by default, since parsing may produce units with commodity codes.
+
+    ```cpp
+    auto meas = measurement_from_string("45 mph");
+    double mps = meas.value_as(precise::m / precise::s);
+    ```
+
+    Convert to the lower-precision type when interoperating:
+
+    ```cpp
+    precise_measurement pm(10.0, precise::kg);
+    measurement m = measurement_cast(pm);
+    ```
+
+    Size: **24 bytes** (8-byte `double` + 16-byte `precise_unit`)
+  </Tab>
+</Tabs>
+
+## `fixed_measurement` and `fixed_precise_measurement`
+
+A `fixed_measurement` holds a `const unit` — the unit is set at construction and never changes. This enables two behaviors not available on regular measurements:
+
+1. **Arithmetic with plain `double`s**: because the unit is known statically, adding `3.0` to a distance measurement unambiguously means 3 of whatever unit the measurement was constructed with.
+2. **Auto-conversion on assignment**: assigning a `measurement` with different units automatically converts the value.
+
+```cpp
+fixed_measurement dist(10, m);
+
+if (dist > 10.0) {  // comparison with double is valid — unit is known
+    // ...
+}
+
+dist = dist + 3.0;  // dist is now 13 meters
+dist -= 2.0;        // dist is now 11 meters
+dist = 5.0;         // dist is now 5 meters
+
+// Assigning a measurement in different units auto-converts
+measurement dist_km = 0.1 * km;
+dist = dist_km;     // dist is now 100 meters
+```
+
+<Note>
+`fixed_measurement` has an implicit conversion to `measurement`, so it works wherever a `measurement` is expected. The reverse — constructing a `fixed_measurement` from a `measurement` — is explicit and requires a cast.
+</Note>
+
+`fixed_precise_measurement` is the precise-unit variant of `fixed_measurement`. It uses `precise_unit` as the constant unit and is 24 bytes.
+
+## `uncertain_measurement`
+
+`uncertain_measurement` pairs a `float` value with a `float` uncertainty and a `unit`. It is 16 bytes total. Mathematical operations propagate the uncertainty automatically: the overloaded `+`, `-`, `*`, and `/` operators use root-sum-of-squares (RSS) propagation by default, while the `simple_add`, `simple_subtract`, `simple_product`, and `simple_divide` variants use linear propagation.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+uncertain_measurement length(10.0f, 0.1f, m);   // 10.0 ± 0.1 m
+uncertain_measurement time(2.0f, 0.05f, s);      // 2.0 ± 0.05 s
+
+// RSS uncertainty propagation
+uncertain_measurement speed = length / time;     // ≈ 5.0 m/s, uncertainty propagated
+
+double unc   = speed.uncertainty();              // numerical uncertainty value
+double frac  = speed.fractional_uncertainty();   // uncertainty / value
+```
+
+<AccordionGroup>
+  <Accordion title="uncertainty()">
+    Returns the numerical uncertainty value as a `double`.
+  </Accordion>
+  <Accordion title="uncertainty_f()">
+    Returns the uncertainty as a `float`.
+  </Accordion>
+  <Accordion title="uncertainty_measurement()">
+    Returns the uncertainty as a separate `measurement` object, with the same unit as the parent.
+  </Accordion>
+  <Accordion title="uncertainty_as(unit)">
+    Returns the uncertainty converted to the given unit as a `double`.
+  </Accordion>
+  <Accordion title="fractional_uncertainty()">
+    Returns the uncertainty divided by the value — a dimensionless relative error.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+`uncertain_measurement` uses `float` (32-bit) for both the value and the uncertainty, giving approximately 7 significant digits. This is intentional: the uncertainty itself rarely warrants higher precision, and the compact representation keeps the type at 16 bytes.
+</Note>
+
+## When to use each type
+
+<AccordionGroup>
+  <Accordion title="Use measurement for general arithmetic">
+    The default choice for physical calculations. Low overhead, compatible with the `unit` type, and sufficient precision for most engineering contexts.
+  </Accordion>
+  <Accordion title="Use precise_measurement when parsing strings">
+    `measurement_from_string` and related functions return `precise_measurement`. Keep the result as `precise_measurement` when you need to preserve commodity information or maximum precision through subsequent conversions.
+  </Accordion>
+  <Accordion title="Use fixed_measurement when the unit is always the same">
+    Ideal for class members or function parameters where the unit is part of the interface contract. The auto-conversion on assignment prevents silent unit mismatches, and the ability to add/subtract plain numbers simplifies code that mixes measured values with constants.
+
+    ```cpp
+    class Position {
+        fixed_measurement x_{0.0, m};
+        fixed_measurement y_{0.0, m};
+    public:
+        void move(double dx_meters, double dy_meters) {
+            x_ += dx_meters;
+            y_ += dy_meters;
+        }
+    };
+    ```
+  </Accordion>
+  <Accordion title="Use fixed_precise_measurement for precise fixed-unit quantities">
+    When you need both the semantic clarity of a fixed unit and the precision of `precise_unit` — for instance, storing a parsed value that must retain its commodity tag while being accumulated with scalar offsets.
+  </Accordion>
+  <Accordion title="Use uncertain_measurement when tracking measurement error">
+    When the source data carries a known uncertainty (instrument tolerance, sensor noise, standard deviation), `uncertain_measurement` tracks and propagates it automatically. Use the `simple_*` variants for linear propagation or the overloaded operators for RSS propagation.
+  </Accordion>
+</AccordionGroup>
+
+## Free functions
+
+These functions work on any of the measurement types:
+
+```cpp
+// Check validity
+bool ok = is_valid(meas);      // true if unit is valid and value is not NaN
+bool normal = isnormal(meas);  // true if unit is normal and value is finite and non-subnormal
+
+// Power and root
+measurement area = pow(length, 2);  // length²
+measurement side = sqrt(area);      // √area (units must have a valid root)
+
+// Cast between types
+measurement        m_cast  = measurement_cast(precise_meas);
+fixed_measurement  fm_cast = measurement_cast(fixed_precise_meas);
+```

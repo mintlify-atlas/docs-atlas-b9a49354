@@ -1,0 +1,164 @@
+---
+title: "Conversion flags for string parsing"
+description: "Reference for the flag bitfield controlling string-to-unit and unit-to-string conversion behavior, including defaults, domains, and performance options."
+---
+
+The `unit_from_string` and `to_string` functions accept an optional integer flags argument that controls how the conversion operates. In most cases the defaults are sufficient, but flags become useful when you need strict standards compliance, domain-specific matching, or improved performance by skipping irrelevant parsing steps.
+
+## Default flags
+
+When no flag argument is provided, the library calls `getDefaultFlags()` internally. The initial value is `0U` (equivalent to `default_conversions`), but you can change the process-wide default at runtime.
+
+```cpp
+#include "units/units.hpp"
+
+// Change the default for all subsequent conversions
+std::uint64_t previous = units::setDefaultFlags(
+    units::unit_from_string_flags::case_insensitive
+);
+
+// Convert using the new default
+auto u = units::unit_from_string("MiLLiMeTeR");
+
+// Restore the original default
+units::setDefaultFlags(previous);
+
+// Read the current default without changing it
+std::uint64_t current = units::getDefaultFlags();
+```
+
+<Note>
+`setDefaultFlags` returns the previous value. Save it if you need to restore the original state after a temporary change.
+</Note>
+
+The compile-time default can also be set with the `UNITS_DEFAULT_MATCH_FLAGS` CMake variable or preprocessor definition, which sets the integer value used to initialize the default before any `setDefaultFlags` call.
+
+## Combining flags
+
+All flags are bitmasks and can be combined with the bitwise OR operator.
+
+```cpp
+#include "units/units.hpp"
+using namespace units;
+
+// Combine multiple flags
+std::uint64_t my_flags = unit_from_string_flags::case_insensitive
+                       | unit_from_string_flags::astronomy_units
+                       | unit_from_string_flags::no_of_operator;
+
+auto u = unit_from_string("parsec", my_flags);
+```
+
+## `unit_from_string` flags
+
+<AccordionGroup>
+  <Accordion title="Matching behavior">
+
+| Flag | Description |
+|---|---|
+| `default_conversions` | No flags set; uses the library defaults (equivalent to `0U`). |
+| `case_insensitive` | Perform case-insensitive matching. Targets UCUM case-insensitive mode but works for any situation where capitalization should be ignored. |
+| `single_slash` | Treat a single `/` as separating the entire numerator from the entire denominator. Targeted at programs that use this exact format. |
+| `strict_si` | Restrict matching to strict SI capitalization rules. For example, prevents `Um` from matching micrometres. |
+
+  </Accordion>
+  <Accordion title="Domain flags">
+
+Domain flags prioritize or restrict matching to units used in a particular field. They change which unit is returned when a string is ambiguous.
+
+| Flag | Domain |
+|---|---|
+| `strict_ucum` | UCUM standard unit strings. |
+| `cooking_units` | Cooking and recipe units. |
+| `astronomy_units` | Astronomical units (parsec, light-year, etc.). |
+| `surveying_units` | Land surveying units. |
+| `nuclear_units` | Nuclear physics and radiation units. |
+| `climate_units` | Climate science units. |
+| `us_customary_units` | US customary measurements (equivalent to `cooking_units \| surveying_units`). |
+
+Domain flags can be combined with each other and with other flag categories.
+
+  </Accordion>
+  <Accordion title="Parser control flags">
+
+These flags are primarily used internally by the recursive string-conversion logic. They can also be set by callers to skip specific parsing steps.
+
+| Flag | Description |
+|---|---|
+| `numbers_only` | Match only numbers in the first segment. Mostly applies to power operations. |
+| `no_recursion` | Do not recurse through the string. Use for simple strings to improve performance. |
+| `not_first_pass` | Indicates this is not the first recursive pass. |
+| `no_per_operators` | Skip matching the word "per". |
+| `no_locality_modifiers` | Skip locality modifier matching. |
+| `no_of_operator` | Skip handling of "of" in unit strings. |
+| `no_addition` | Skip unit addition parsing. |
+| `no_commodities` | Skip commodity checks. Use if commodities are known not to apply, for a small performance gain. |
+| `skip_partition_check` | Skip the partition-check algorithm. Suitable for simple strings; improves performance. |
+| `skip_si_prefix_check` | Skip checking for SI prefixes. |
+| `skip_code_replacements` | Skip code and sequence substitutions. |
+
+  </Accordion>
+  <Accordion title="Partition size flags">
+
+Partition size flags control the minimum character length of string segments the parser will consider as a unit. Larger minimums reduce the chance of false-positive matches at the cost of failing to recognise very short unit abbreviations.
+
+| Flag | Minimum segment length |
+|---|---|
+| `minimum_partition_size2` | 2 characters |
+| `minimum_partition_size3` | 3 characters |
+| `minimum_partition_size4` | 4 characters |
+| `minimum_partition_size5` | 5 characters |
+| `minimum_partition_size6` | 6 characters |
+| `minimum_partition_size7` | 7 characters |
+
+  </Accordion>
+</AccordionGroup>
+
+## `to_string` flags
+
+| Flag | Description |
+|---|---|
+| `disable_large_power_strings` | When the unit definition allows large power notation, this flag suppresses it in the output string. |
+
+`to_string` flags can be combined with `unit_from_string` flags in a single integer value without conflict.
+
+```cpp
+#include "units/units.hpp"
+
+std::string s = units::to_string(
+    units::precise::W * units::precise::precise_unit{1e12, units::precise::one},
+    units::unit_from_string_flags::disable_large_power_strings
+);
+```
+
+## Performance guidance
+
+<CardGroup cols={2}>
+  <Card title="Skip recursion for simple inputs" icon="bolt">
+    If you know your input strings are single-token unit names (no "per", no "of", no multiplication), pass `no_recursion | skip_partition_check` for a measurable speedup.
+  </Card>
+  <Card title="Restrict partitioning for accuracy" icon="shield">
+    If you are seeing unexpected unit matches, try `minimum_partition_size3` or higher to prevent short abbreviations from being misidentified inside longer strings.
+  </Card>
+  <Card title="Use domain flags for field-specific input" icon="tag">
+    Passing a domain flag such as `astronomy_units` or `nuclear_units` ensures ambiguous strings resolve to the correct unit for your discipline.
+  </Card>
+  <Card title="Set a process-wide default" icon="sliders">
+    Call `setDefaultFlags` once at startup instead of passing flags on every call to `unit_from_string`. Use the `UNITS_DEFAULT_MATCH_FLAGS` build option to bake in a compile-time default.
+  </Card>
+</CardGroup>
+
+## Setting the compile-time default
+
+The `UNITS_DEFAULT_MATCH_FLAGS` preprocessor definition (also exposed as a CMake variable) sets the integer value used when `getDefaultFlags` is first called. This is useful for embedded or single-domain builds where runtime flag changes are not needed.
+
+```cmake
+# CMakeLists.txt — force astronomy domain matching by default
+target_compile_definitions(myapp PRIVATE
+    UNITS_DEFAULT_MATCH_FLAGS=256  # astronomy_units flag value
+)
+```
+
+<Warning>
+Changing `UNITS_DEFAULT_MATCH_FLAGS` affects every call to `unit_from_string` that does not pass an explicit flag argument, including calls made by library code. Verify the effect on all unit strings used by your application.
+</Warning>

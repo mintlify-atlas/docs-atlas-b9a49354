@@ -1,0 +1,136 @@
+---
+title: "Using the Units C++20 module"
+description: "Enable the experimental units::module CMake target to consume the Units library as a C++20 named module with import units; instead of #include directives."
+---
+
+The Units library ships an experimental C++20 module wrapper that lets you write `import units;` instead of `#include <units/units.hpp>`. The module re-exports a curated public API in the `units::` namespace and is built as a separate CMake target so it does not affect projects that do not opt in.
+
+<Warning>
+  The C++20 module support is experimental. The module interface, the set of exported symbols, and build behaviour may change across library versions. Traditional header-based integration remains the stable option.
+</Warning>
+
+---
+
+## Requirements
+
+- CMake 3.28 or newer
+- A compiler with C++20 named module support (recent Clang, GCC 14+, or MSVC 19.34+)
+- The `UNITS_BUILD_CXX_MODULE=ON` CMake option
+
+<Note>
+  The C++20 module target cannot be combined with `UNITS_HEADER_ONLY=ON`. The module wraps the compiled library and requires the `.cpp` translation units to be built.
+</Note>
+
+---
+
+## Enabling the module
+
+Pass `-DUNITS_BUILD_CXX_MODULE=ON` when configuring the library:
+
+```bash
+cmake -S units -B build \
+  -DUNITS_BUILD_CXX_MODULE=ON \
+  -DCMAKE_BUILD_TYPE=Release
+```
+
+When using FetchContent, set the variable before `FetchContent_MakeAvailable`:
+
+```cmake
+set(UNITS_BUILD_CXX_MODULE ON CACHE BOOL "")
+
+include(FetchContent)
+FetchContent_Declare(units
+  GIT_REPOSITORY https://github.com/LLNL/units.git
+  GIT_TAG        main
+)
+FetchContent_MakeAvailable(units)
+```
+
+---
+
+## The `units::module` CMake target
+
+Once the option is enabled, a `units::module` CMake target is generated. Link against it and require C++20:
+
+```cmake
+target_link_libraries(my_app PRIVATE units::module)
+target_compile_features(my_app PRIVATE cxx_std_20)
+```
+
+Do not link both `units::units` and `units::module` in the same target. The module target already depends on the compiled library internally.
+
+---
+
+## Using `import units;`
+
+With the target linked, replace the `#include` directive with an import declaration:
+
+```cpp
+import units;
+
+int main()
+{
+    auto speed = 12.0 * units::m / units::s;
+    return (speed.units() == units::m / units::s) ? 0 : 1;
+}
+```
+
+All symbols exported by the module are in the `units::` namespace, identical to what you get through the traditional headers.
+
+---
+
+## Exported public API
+
+The module guarantees a curated subset of the full library API. The following names are available after `import units;`:
+
+**Core types and functions**
+
+- Types: `unit`, `precise_unit`, `measurement`, `precise_measurement`
+- Conversion: `convert`, `quick_convert`
+- String operations: `unit_from_string`, `measurement_from_string`, `to_string`
+
+**All seven SI base units** (by symbol and common name)
+
+`m` / `meter`, `kg` / `kilogram`, `s` / `second`, `A` / `Ampere`, `K` / `Kelvin`, `mol`, `cd`
+
+**Common SI and SI-derived units**
+
+`rad`, `Hz`, `N`, `J`, `W`, `V`, `ohm`, `Pa`, `C`, `cm`, `mm`, `km`, `L`, `g`, `degC`, `degF`
+
+**Common non-SI and scalar units**
+
+`minute`, `h`, `hr`, `ft` / `foot`, `in` / `inch`, `mile`, `lb`, `gal`, `deg`, `mph`, `count`, `currency`
+
+**Main SI prefixes as scalar multipliers**
+
+`milli`, `micro`, `nano`, `pico`, `kilo`, `mega`, `giga`
+
+<Note>
+  Units not in the curated list above — including everything in `units::precise` and its subnamespaces — remain available through the traditional headers. You can mix `import units;` with `#include <units/units.hpp>` in different translation units if you need the extended API alongside the module.
+</Note>
+
+---
+
+## Example: speed calculation
+
+The following example uses only symbols exported by the module to compute a speed and convert it to kilometres per hour:
+
+```cpp
+import units;
+
+int main()
+{
+    // Build a speed measurement from exported unit constants
+    auto distance = 100.0 * units::m;
+    auto time     = 9.58 * units::s;
+    auto speed    = distance / time;
+
+    // Convert to km/h using the exported convert function
+    double kph = units::convert(speed.value(), speed.units(), units::km / units::hr);
+
+    // kph ≈ 37.58
+    return 0;
+}
+```
+
+The same code using the traditional header would be identical in structure — the difference is only the `import units;` declaration at the top.

@@ -1,0 +1,285 @@
+---
+title: "precise_unit type — C++ API reference"
+description: "Complete reference for precise_unit: a 16-byte unit type using a double multiplier plus an optional commodity code for higher-precision work."
+keywords: ["precise_unit", "C++ API", "llnl units", "commodity", "double precision", "unit_cast"]
+---
+
+`precise_unit` is the high-precision counterpart to [`unit`](/api/unit). Where `unit` stores a 32-bit float multiplier, `precise_unit` uses a 64-bit `double`, giving approximately 13 significant digits of precision. The extra 4 bytes beyond the 12 bytes of multiplier and base data are used to store a 32-bit commodity code that distinguishes physically identical units used in different material contexts — for example, a gallon of water versus a gallon of gasoline.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+precise_unit water_vol(precise::gal, getCommodity("water"));
+precise_unit fuel_vol(precise::gal, getCommodity("gasoline"));
+
+// These are NOT equal despite having the same base unit
+assert(water_vol != fuel_vol);
+```
+
+<Note>
+  `precise_unit` can operate directly with `unit` objects (as the less-precise operand), but `unit` cannot accept `precise_unit` on the right-hand side without an explicit `unit_cast`.
+</Note>
+
+---
+
+## Constructors
+
+<ResponseField name="precise_unit()" type="constexpr">
+  Default constructor. Produces the dimensionless unit with multiplier `1.0` and no commodity.
+</ResponseField>
+
+<ResponseField name="precise_unit(detail::unit_data base)" type="constexpr explicit">
+  Constructs from raw base-unit data with multiplier `1.0` and no commodity.
+</ResponseField>
+
+<ResponseField name="precise_unit(double mult, detail::unit_data base)" type="constexpr">
+  Constructs from a `double` multiplier and base-unit data.
+</ResponseField>
+
+<ResponseField name="precise_unit(double mult, detail::unit_data base, uint32_t commodity)" type="constexpr">
+  Constructs from a multiplier, base-unit data, and a commodity code.
+</ResponseField>
+
+<ResponseField name="precise_unit(detail::unit_data base, uint32_t commodity)" type="constexpr explicit">
+  Constructs with multiplier `1.0`, a base, and a commodity.
+</ResponseField>
+
+<ResponseField name="precise_unit(unit other)" type="constexpr explicit">
+  Upcasts a `unit` to `precise_unit`. The `float` multiplier is widened to `double`; commodity is set to `0`.
+</ResponseField>
+
+<ResponseField name="precise_unit(double mult, unit other)" type="constexpr">
+  Constructs by scaling `other` by `mult`, preserving `other`'s base.
+</ResponseField>
+
+<ResponseField name="precise_unit(double mult, unit other, uint32_t commodity)" type="constexpr">
+  Constructs by scaling `other` by `mult` with an explicit commodity code.
+</ResponseField>
+
+<ResponseField name="precise_unit(unit other, uint32_t commodity)" type="constexpr explicit">
+  Upcasts a `unit` and attaches a commodity code.
+</ResponseField>
+
+<ResponseField name="precise_unit(double mult, precise_unit other)" type="constexpr">
+  Constructs by scaling `other` by `mult`, inheriting `other`'s commodity.
+</ResponseField>
+
+<ResponseField name="precise_unit(precise_unit other, uint32_t commodity)" type="constexpr explicit">
+  Copy-constructs and ORs `commodity` with `other`'s existing commodity code.
+</ResponseField>
+
+<ResponseField name="precise_unit(double mult, precise_unit other, uint32_t commodity)" type="constexpr">
+  Scales `other` by `mult` and ORs `commodity` with `other`'s commodity.
+</ResponseField>
+
+```cpp
+using namespace units;
+
+precise_unit pu1;                                           // dimensionless 1.0
+precise_unit pu2 = precise::m;                             // 1.0 m (from predefined constant)
+precise_unit pu3(0.001, precise::m);                       // 0.001 m (millimeter)
+precise_unit pu4(precise::gal, getCommodity("gasoline"));  // gallon of gasoline
+```
+
+---
+
+## Member methods
+
+### Arithmetic
+
+<ResponseField name="inv()" type="constexpr precise_unit">
+  Returns the reciprocal. The multiplier is inverted, all base-unit exponents are negated, and the commodity is bitwise inverted (or set to `0` if it was already `0`).
+
+  ```cpp
+  precise_unit per_meter = precise::m.inv(); // 1/m
+  ```
+</ResponseField>
+
+<ResponseField name="pow(int power)" type="constexpr precise_unit">
+  Raises the unit to an integer power. The commodity is passed through unchanged. Negative powers are allowed.
+
+  ```cpp
+  precise_unit m3 = precise::m.pow(3); // m³
+  ```
+</ResponseField>
+
+### Commodity
+
+<ResponseField name="commodity()" type="constexpr uint32_t">
+  Returns the 32-bit commodity code. Returns `0` when no commodity is set.
+
+  ```cpp
+  precise_unit u(precise::gal, getCommodity("water"));
+  uint32_t code = u.commodity(); // non-zero code for "water"
+  ```
+</ResponseField>
+
+<ResponseField name="commodity(uint32_t newCommodity)" type="precise_unit&">
+  Sets the commodity code and returns a reference to `*this` for chaining. This is the only non-`const` member that modifies commodity state.
+
+  ```cpp
+  precise_unit u = precise::L;
+  u.commodity(getCommodity("oil"));
+  ```
+</ResponseField>
+
+### Inspection
+
+<ResponseField name="multiplier()" type="constexpr double">
+  Returns the unit's `double` multiplier.
+</ResponseField>
+
+<ResponseField name="multiplier_f()" type="constexpr float">
+  Returns the unit's multiplier narrowed to `float`.
+</ResponseField>
+
+<ResponseField name="cround()" type="double">
+  Returns the multiplier rounded to ~12 significant digits (the precision level for `double` comparisons).
+</ResponseField>
+
+<ResponseField name="base_units()" type="constexpr detail::unit_data">
+  Returns the underlying `unit_data` bitfield.
+</ResponseField>
+
+### Comparison helpers
+
+<ResponseField name="is_exactly_the_same(precise_unit other)" type="constexpr bool">
+  Exact equality of base, commodity, and multiplier using `==` on `double`. No tolerance is applied.
+</ResponseField>
+
+<ResponseField name="is_exactly_the_same(unit other)" type="constexpr bool">
+  Returns `true` when `commodity_ == 0` and the `precise_unit`'s multiplier equals `other.multiplier()` exactly (comparing as `double`).
+</ResponseField>
+
+<ResponseField name="has_same_base(precise_unit|unit|unit_data other)" type="constexpr bool">
+  Returns `true` when all ten base-unit exponents match, ignoring flags, multiplier, and commodity.
+</ResponseField>
+
+<ResponseField name="equivalent_non_counting(precise_unit|unit|unit_data other)" type="constexpr bool">
+  Returns `true` when the seven physical base dimensions match, ignoring count, radians, and flags.
+</ResponseField>
+
+<ResponseField name="is_convertible(precise_unit other)" type="constexpr bool">
+  Returns `true` when both the commodity codes and the non-counting base dimensions match.
+</ResponseField>
+
+<ResponseField name="is_convertible(unit|unit_data other)" type="constexpr bool">
+  Returns `true` when the non-counting base dimensions match (commodity is ignored).
+</ResponseField>
+
+### Flag and metadata queries
+
+The following methods are identical in behavior to their [`unit`](/api/unit) counterparts:
+
+<ResponseField name="unit_type_count()" type="constexpr int">Number of distinct non-zero base dimensions.</ResponseField>
+<ResponseField name="is_per_unit()" type="constexpr bool">Per-unit flag status.</ResponseField>
+<ResponseField name="is_equation()" type="constexpr bool">Equation flag status.</ResponseField>
+<ResponseField name="has_i_flag()" type="constexpr bool">Imaginary flag status.</ResponseField>
+<ResponseField name="has_e_flag()" type="constexpr bool">Extra-differentiation flag status.</ResponseField>
+<ResponseField name="clear_flags()" type="void">Clears per-unit, i_flag, e_flag, and equation flags in place.</ResponseField>
+
+---
+
+## Operators
+
+<ResponseField name="operator*(precise_unit rhs)" type="constexpr precise_unit">
+  Multiplies two `precise_unit` values. Commodity codes are combined: if one is `0` the other is used; if both are non-zero they are ORed together.
+</ResponseField>
+
+<ResponseField name="operator*(unit rhs)" type="constexpr precise_unit">
+  Multiplies a `precise_unit` by a `unit`. The `precise_unit`'s commodity is preserved.
+</ResponseField>
+
+<ResponseField name="operator/(precise_unit rhs)" type="constexpr precise_unit">
+  Divides two `precise_unit` values. Commodity is combined as a bitwise AND with NOT of the divisor's commodity.
+</ResponseField>
+
+<ResponseField name="operator/(unit rhs)" type="constexpr precise_unit">
+  Divides a `precise_unit` by a `unit`. Commodity is preserved from the dividend.
+</ResponseField>
+
+<ResponseField name="operator==(precise_unit rhs)" type="bool">
+  Rounded equality within ~13 significant digits; also checks commodity equality.
+</ResponseField>
+
+<ResponseField name="operator==(unit rhs)" type="bool">
+  Mixed comparison using float-precision rounding on the multiplier.
+</ResponseField>
+
+<ResponseField name="operator!=(precise_unit|unit rhs)" type="bool">
+  Logical inverse of `operator==`.
+</ResponseField>
+
+<Tip>
+  The free friend function `operator==(unit, precise_unit)` is defined to delegate to `precise_unit::operator==(unit)`, so mixed-order comparisons work symmetrically.
+</Tip>
+
+---
+
+## Interoperability with `unit`
+
+`precise_unit` is a superset of `unit`. The following table summarizes which operations are available:
+
+| Operation | `precise_unit op precise_unit` | `precise_unit op unit` | `unit op precise_unit` |
+|---|---|---|---|
+| `*` | Yes | Yes | No — use `unit_cast` first |
+| `/` | Yes | Yes | No — use `unit_cast` first |
+| `==` | Yes | Yes | Yes (friend function) |
+
+To use a `precise_unit` on the right-hand side of a `unit` operation, first convert it:
+
+```cpp
+using namespace units;
+
+precise_unit pu = precise::km;
+unit u = unit_cast(pu);   // now usable in unit arithmetic
+unit result = units::m * u;
+```
+
+---
+
+## `unit_cast` conversion
+
+<ResponseField name="unit_cast(precise_unit val)" type="constexpr unit">
+  Narrows `precise_unit` → `unit` by casting the `double` multiplier to `float` and discarding the commodity code.
+
+  ```cpp
+  precise_unit pu(1.234567890123456, precise::m.base_units());
+  unit u = unit_cast(pu);
+  // u.multiplier() ≈ 1.234568 (float precision)
+  ```
+</ResponseField>
+
+<ResponseField name="is_unit_cast_lossless(precise_unit val)" type="constexpr bool">
+  Returns `true` when the `double` multiplier can round-trip through `float` without any bit loss. Useful before down-casting in performance-sensitive paths.
+
+  ```cpp
+  assert(is_unit_cast_lossless(precise::km));   // 1000.0 is exact in float
+  ```
+</ResponseField>
+
+---
+
+## `std::hash` specialization
+
+```cpp
+std::unordered_map<units::precise_unit, std::string> symbol_map;
+symbol_map[units::precise::m]  = "m";
+symbol_map[units::precise::kg] = "kg";
+```
+
+The `std::hash<precise_unit>` specialization combines the hash of the rounded `double` multiplier with the hash of the `unit_data` bitfield.
+
+---
+
+## Size and precision summary
+
+| Property | Value |
+|---|---|
+| Total size | 16 bytes |
+| Multiplier type | `double` (64-bit) |
+| Multiplier precision | ~13 significant digits |
+| Base-unit storage | 4-byte `detail::unit_data` bitfield |
+| Commodity storage | 4-byte `uint32_t` |
+| Equality tolerance | ~13 significant digits |

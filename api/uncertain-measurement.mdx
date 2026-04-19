@@ -1,0 +1,239 @@
+---
+title: "uncertain_measurement — C++ API reference"
+description: "Reference for uncertain_measurement: float value and float uncertainty with automatic propagation through arithmetic using quadrature or linear methods."
+keywords: ["uncertain_measurement", "uncertainty", "C++ API", "llnl units", "error propagation", "measurement"]
+---
+
+`uncertain_measurement` extends the measurement concept by adding an uncertainty field stored alongside the value. Both the value and the uncertainty are `float` (32-bit), keeping the total type size to 16 bytes. Arithmetic operations propagate the uncertainty automatically. Two propagation strategies are available: the default operators use root-sum-of-squares (quadrature) propagation, while the `simple_*` methods use linear (worst-case) propagation.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+uncertain_measurement mass(9.81f, 0.02f, kg);
+uncertain_measurement accel(3.5f, 0.1f, m / s.pow(2));
+
+uncertain_measurement force = mass * accel;
+// value ≈ 34.335 N
+// uncertainty propagated in quadrature
+```
+
+<Note>
+  `uncertain_measurement` interoperates with the other measurement types. It can be combined with `measurement` objects in arithmetic, and its uncertainty is preserved or updated as appropriate.
+</Note>
+
+---
+
+## Constructors
+
+<ResponseField name="uncertain_measurement(float val, float uncertainty, unit u)" type="constructor">
+  The primary constructor. Stores `val` as the central value, `uncertainty` as the absolute uncertainty (same unit as `val`), and `u` as the unit basis.
+
+  ```cpp
+  uncertain_measurement voltage(230.0f, 1.5f, V); // 230 ± 1.5 V
+  ```
+</ResponseField>
+
+<ResponseField name="uncertain_measurement(double val, double uncertainty, unit u)" type="constructor">
+  Convenience constructor accepting `double` values, which are narrowed to `float` on storage.
+</ResponseField>
+
+<ResponseField name="uncertain_measurement(float val, unit u)" type="constructor">
+  Constructs with zero uncertainty.
+
+  ```cpp
+  uncertain_measurement exact(100.0f, ohm); // uncertainty = 0
+  ```
+</ResponseField>
+
+<ResponseField name="uncertain_measurement(measurement m, float uncertainty)" type="constructor">
+  Constructs from a `measurement` and an absolute uncertainty expressed in the measurement's unit.
+</ResponseField>
+
+The copy constructor and copy-assignment operator are also available.
+
+---
+
+## Value and uncertainty accessors
+
+<ResponseField name="value()" type="double const">
+  Returns the central value as a `double` (widened from the stored `float`).
+
+  ```cpp
+  uncertain_measurement u(9.81f, 0.01f, m / s.pow(2));
+  double g = u.value(); // 9.81
+  ```
+</ResponseField>
+
+<ResponseField name="uncertainty()" type="double const">
+  Returns the absolute uncertainty as a `double`.
+
+  ```cpp
+  double sigma = u.uncertainty(); // 0.01
+  ```
+</ResponseField>
+
+<ResponseField name="uncertainty_f()" type="float const">
+  Returns the uncertainty as a `float` without widening.
+</ResponseField>
+
+<ResponseField name="units()" type="unit const">
+  Returns the unit basis.
+</ResponseField>
+
+<ResponseField name="uncertainty_measurement()" type="measurement const">
+  Returns the uncertainty packaged as a standalone `measurement` using the same unit.
+
+  ```cpp
+  measurement sigma_m = u.uncertainty_measurement(); // 0.01 m/s²
+  ```
+</ResponseField>
+
+<ResponseField name="uncertainty_as(unit target)" type="double const">
+  Returns the uncertainty converted to `target` units.
+
+  ```cpp
+  uncertain_measurement d(5.0f, 0.01f, km);
+  double sigma_m = d.uncertainty_as(m); // 10.0
+  ```
+</ResponseField>
+
+<ResponseField name="fractional_uncertainty()" type="double const">
+  Returns the relative uncertainty as a fraction of the value: `uncertainty / value`.
+
+  ```cpp
+  uncertain_measurement r(100.0f, 2.0f, ohm);
+  double rel = r.fractional_uncertainty(); // 0.02  (i.e., 2%)
+  ```
+</ResponseField>
+
+<ResponseField name="value_as(unit target)" type="double const">
+  Returns the central value converted to `target` units.
+</ResponseField>
+
+---
+
+## Arithmetic methods
+
+### Root-sum-of-squares propagation (default operators)
+
+The standard `+`, `-`, `*`, `/` operators propagate uncertainty in quadrature:
+
+- **Addition/subtraction**: `σ_result = √(σ_a² + σ_b²)`
+- **Multiplication/division**: relative uncertainties are combined in quadrature: `σ_result/result = √((σ_a/a)² + (σ_b/b)²)`
+
+```cpp
+uncertain_measurement a(10.0f, 0.5f, m);
+uncertain_measurement b(5.0f, 0.3f, m);
+
+uncertain_measurement sum  = a + b;  // 15.0 ± √(0.25 + 0.09) ≈ 15.0 ± 0.583 m
+uncertain_measurement diff = a - b;  // 5.0 ± 0.583 m (same quadrature)
+uncertain_measurement prod = a * b;  // units become m²
+```
+
+### Simple (linear) propagation methods
+
+<ResponseField name="simple_add(uncertain_measurement rhs)" type="uncertain_measurement const">
+  Addition with linear uncertainty: `σ_result = σ_a + σ_b`. Always an overestimate compared to quadrature.
+</ResponseField>
+
+<ResponseField name="simple_subtract(uncertain_measurement rhs)" type="uncertain_measurement const">
+  Subtraction with linear uncertainty propagation.
+</ResponseField>
+
+<ResponseField name="simple_product(uncertain_measurement rhs)" type="uncertain_measurement constexpr (C++14)">
+  Multiplication with linear relative uncertainty propagation. `constexpr` when compiled with C++14 or newer.
+</ResponseField>
+
+<ResponseField name="simple_divide(uncertain_measurement rhs)" type="uncertain_measurement constexpr (C++14)">
+  Division with linear relative uncertainty propagation. `constexpr` when compiled with C++14 or newer.
+</ResponseField>
+
+```cpp
+uncertain_measurement a(10.0f, 0.5f, m);
+uncertain_measurement b(5.0f, 0.3f, m);
+
+// Linear propagation — simple methods
+auto sum_simple = a.simple_add(b);  // uncertainty = 0.5 + 0.3 = 0.8 m
+auto sum_quad   = a + b;            // uncertainty ≈ 0.583 m (tighter)
+```
+
+<Tip>
+  Use the simple methods when you want a guaranteed upper bound on uncertainty (e.g., calibration certificates). Use the default operators when combining many independent sources, where quadrature is statistically more accurate.
+</Tip>
+
+---
+
+## Operators summary
+
+```
++  -  *  /         uncertain_measurement ↔ uncertain_measurement (quadrature)
+*  /               uncertain_measurement ↔ double  (scales value and uncertainty)
+*  /               double ↔ uncertain_measurement
++  -               uncertain_measurement ↔ measurement
+*  /               uncertain_measurement ↔ measurement
+==  !=  <  >  <=  >=  comparison (compares central values)
+```
+
+---
+
+## Parsing from strings
+
+`uncertain_measurement` can be constructed by parsing a string that contains an explicit uncertainty. Three notations are supported:
+
+### ± notation
+
+```cpp
+auto u = uncertain_measurement_from_string("9.81 ± 0.01 m/s^2");
+```
+
+The `+/-` ASCII sequence and the HTML entity `&#177;` are also accepted.
+
+### Compact notation
+
+The compact form `3.5235(19)` represents a value of `3.5235` with uncertainty of `0.0019` (the digits in parentheses replace the last digits of the value):
+
+```cpp
+auto u = uncertain_measurement_from_string("3.5235(19) kg");
+// value = 3.5235, uncertainty = 0.0019
+```
+
+<Note>
+  The `uncertain_measurement_from_string` function is declared in `units/units.hpp` and requires the compiled library (not available in header-only mode).
+</Note>
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+uncertain_measurement charge = uncertain_measurement_from_string("1.602176634(98)e-19 C");
+// value      ≈ 1.602176634e-19 C
+// uncertainty ≈ 9.8e-27 C
+```
+
+---
+
+## Interaction with `measurement`
+
+`uncertain_measurement` interoperates with plain `measurement`:
+
+```cpp
+using namespace units;
+
+measurement base(9.81, m / s.pow(2));
+uncertain_measurement u(9.81f, 0.01f, m / s.pow(2));
+
+uncertain_measurement result = u * measurement(2.0, s); // uncertainty propagated
+```
+
+---
+
+## Size summary
+
+| Property | Value |
+|---|---|
+| Total size | 16 bytes |
+| Value type | `float` (32-bit) |
+| Uncertainty type | `float` (32-bit) |
+| Unit type | `unit` (8 bytes) |
+| Default uncertainty propagation | Root-sum-of-squares (quadrature) |

@@ -1,0 +1,189 @@
+---
+title: "Predefined units in the Units library"
+description: "A reference for SI base units, derived units, prefixes, and compound unit construction available in the units and units::precise namespaces."
+---
+
+The LLNL units library ships a comprehensive set of predefined unit constants declared as `constexpr` values in `units/unit_definitions.hpp`. All constants live in the `units` namespace (for the standard `unit` type) and are mirrored in `units::precise` for higher-precision `precise_unit` values. You can combine these constants with arithmetic operators to express any compound unit your application requires.
+
+## SI base units
+
+The seven SI base units are available as both a full name and a short alias. Each maps to one of the fundamental dimensions tracked internally by the library.
+
+| Long name | Alias | Quantity |
+|---|---|---|
+| `precise::meter` | `precise::m` | Length |
+| `precise::kilogram` | `precise::kg` | Mass |
+| `precise::second` | `precise::s` | Time |
+| `precise::Ampere` | `precise::A` | Electric current |
+| `precise::Kelvin` | `precise::K` | Thermodynamic temperature |
+| `precise::mol` | — | Amount of substance |
+| `precise::candela` | `precise::cd` | Luminous intensity |
+| `precise::radian` | `precise::rad` | Plane angle |
+
+```cpp
+#include "units/units.hpp"
+
+// Using base unit constants directly
+auto length = units::precise::m;
+auto mass   = units::precise::kg;
+auto time_  = units::precise::s;
+```
+
+## Derived SI units
+
+The library defines all named SI derived units directly in the `units::precise` namespace.
+
+| Constant | Alias | SI definition |
+|---|---|---|
+| `precise::hertz` | `precise::Hz` | s⁻¹ |
+| `precise::newton` | `precise::N` | kg·m·s⁻² |
+| `precise::joule` | `precise::J` | kg·m²·s⁻² |
+| `precise::watt` | `precise::W` | kg·m²·s⁻³ |
+| `precise::volt` | `precise::V` | kg·m²·s⁻³·A⁻¹ |
+| `precise::Pa` | — | kg·m⁻¹·s⁻² (pascal) |
+| `precise::ohm` | — | kg·m²·s⁻³·A⁻² |
+| `precise::coulomb` | `precise::C` | A·s |
+| `precise::farad` | `precise::F` | kg⁻¹·m⁻²·s⁴·A² |
+| `precise::siemens` | `precise::S` | kg⁻¹·m⁻²·s³·A² |
+| `precise::weber` | `precise::Wb` | kg·m²·s⁻²·A⁻¹ |
+| `precise::tesla` | `precise::T` | kg·s⁻²·A⁻¹ |
+| `precise::henry` | — | kg·m²·s⁻²·A⁻² |
+| `precise::lumen` | — | cd·sr |
+| `precise::lux` | — | cd·sr·m⁻² |
+| `precise::becquerel` | — | s⁻¹ (radioactivity) |
+| `precise::gray` | — | m²·s⁻² (absorbed dose) |
+| `precise::sievert` | — | m²·s⁻² (effective dose) |
+| `precise::katal` | — | mol·s⁻¹ |
+
+<Note>
+`sievert` carries an internal biological-effect flag (`eflag`) to distinguish it from `gray` even though their base dimensions are identical. Do not compare them with a simple equality check; use `units_are_convertible` to test dimensional compatibility.
+</Note>
+
+## SI prefixes as unit multipliers
+
+Prefixes are themselves `precise_unit` constants carrying a scalar multiplier over a dimensionless base. Multiply any prefix by a base or derived unit to form a prefixed unit.
+
+<AccordionGroup>
+  <Accordion title="Sub-unit (reducing) prefixes">
+
+| Constant | Factor |
+|---|---|
+| `precise::deci` | 10⁻¹ |
+| `precise::centi` | 10⁻² |
+| `precise::milli` | 10⁻³ |
+| `precise::micro` | 10⁻⁶ |
+| `precise::nano` | 10⁻⁹ |
+| `precise::pico` | 10⁻¹² |
+| `precise::femto` | 10⁻¹⁵ |
+| `precise::atto` | 10⁻¹⁸ |
+| `precise::zepto` | 10⁻²¹ |
+| `precise::yocto` | 10⁻²⁴ |
+| `precise::ronto` | 10⁻²⁷ |
+| `precise::quecto` | 10⁻³⁰ |
+
+  </Accordion>
+  <Accordion title="Super-unit (amplifying) prefixes">
+
+| Constant | Factor |
+|---|---|
+| `precise::deka` / `precise::deca` | 10 |
+| `precise::hecto` | 10² |
+| `precise::kilo` | 10³ |
+| `precise::mega` | 10⁶ |
+| `precise::giga` | 10⁹ |
+| `precise::tera` | 10¹² |
+| `precise::peta` | 10¹⁵ |
+| `precise::exa` | 10¹⁸ |
+| `precise::zetta` | 10²¹ |
+| `precise::yotta` | 10²⁴ |
+| `precise::ronna` | 10²⁷ |
+| `precise::quetta` | 10³⁰ |
+
+  </Accordion>
+  <Accordion title="Binary (IEC) prefixes">
+
+| Constant | Factor |
+|---|---|
+| `precise::kibi` | 2¹⁰ = 1 024 |
+| `precise::mebi` | 2²⁰ |
+| `precise::gibi` | 2³⁰ |
+| `precise::tebi` | 2⁴⁰ |
+| `precise::pebi` | 2⁵⁰ |
+| `precise::exbi` | 2⁶⁰ |
+| `precise::zebi` | 2⁷⁰ |
+| `precise::yobi` | 2⁸⁰ |
+
+  </Accordion>
+</AccordionGroup>
+
+```cpp
+#include "units/units.hpp"
+using namespace units::precise;
+
+// Construct prefixed units by multiplication
+auto km  = kilo  * m;   // kilometre
+auto MHz = mega  * Hz;  // megahertz
+auto ns_ = nano  * s;   // nanosecond
+auto pF  = pico  * F;   // picofarad
+auto GW  = giga  * W;   // gigawatt
+auto mA  = milli * A;   // milliampere
+```
+
+<Tip>
+Prefix constants are plain `precise_unit` values, so `kilo * m` produces a new `precise_unit` with its multiplier scaled by 1 000. There is no separate prefix type or template parameter.
+</Tip>
+
+## Constructing compound units
+
+Unit constants support `*` and `/` operators so you can express any derived quantity inline at compile time.
+
+```cpp
+#include "units/units.hpp"
+using namespace units::precise;
+
+// Velocity: m/s
+auto velocity = m / s;
+
+// Acceleration: m/s²
+auto accel = m / (s * s);
+
+// Force from first principles (equivalent to precise::N)
+auto force = kg * m / (s * s);
+
+// Energy density: J/m³
+auto energy_density = J / (m * m * m);
+
+// Kinematic viscosity: m²/s
+auto nu = (m * m) / s;
+
+// Electric field strength: V/m
+auto E_field = V / m;
+
+// Flow rate: m³/s
+auto flow = (m * m * m) / s;
+```
+
+## The `units` vs `units::precise` namespaces
+
+Every constant described here exists in both namespaces. The difference is the underlying type.
+
+| | `units` namespace | `units::precise` namespace |
+|---|---|---|
+| Type | `unit` | `precise_unit` |
+| Multiplier | `float` (~7 sig. digits) | `double` (~15 sig. digits) |
+| Size | 8 bytes | 16 bytes |
+
+```cpp
+#include "units/units.hpp"
+
+// Both types compile and behave identically for base units
+units::unit         u1 = units::m;
+units::precise_unit u2 = units::precise::m;
+
+// For prefixed or compound units, prefer precise_unit
+units::precise_unit mm = units::precise::milli * units::precise::m;
+```
+
+<Note>
+When precision matters — for example, when chaining many unit conversions — prefer `units::precise` constants. Use the `units` namespace when memory or ABI size constraints require the smaller 8-byte type.
+</Note>

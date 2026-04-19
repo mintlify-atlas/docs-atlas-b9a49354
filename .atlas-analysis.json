@@ -1,23 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Units",
+  "projectType": "sdk-library",
+  "projectName": "Units",
+  "projectDescription": "A runtime C++ library for working with units of measurement, conversions between them, and string representations of units and measurements.",
   "theme": "palm",
-  "colors": {
-    "primary": "#5d6c75",
-    "light": "#b5bec1"
-  },
-  "favicon": "https://media.brand.dev/791a6f4a-1aba-45ad-a62a-fd0929a4aacf.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/llnl/units"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/llnl/units"
-    }
-  },
+  "primaryColor": "#5d6c75",
+  "lightColor": "#b5bec1",
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -93,5 +81,40 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Runtime unit conversion between hundreds of units",
+    "String-to-unit and unit-to-string conversions",
+    "Compact 8-byte unit representation covering all SI base units",
+    "Measurement types with arithmetic operations and uncertainty propagation",
+    "User-defined units and commodities support",
+    "Domain-specific string interpretation (e.g., Nuclear, Astronomy, UCUM)",
+    "Per-unit and equation-type units for power systems",
+    "Python wrapper available via PyPI (units-llnl)",
+    "Header-only mode and compiled mode with string support",
+    "C++20 module support"
+  ],
+  "publicApiSurface": [
+    "unit",
+    "precise_unit",
+    "measurement",
+    "precise_measurement",
+    "fixed_measurement",
+    "fixed_precise_measurement",
+    "uncertain_measurement",
+    "convert(unit, unit)",
+    "convert(double, unit, unit)",
+    "quick_convert(unit, unit)",
+    "unit_from_string(string, flags)",
+    "measurement_from_string(string, flags)",
+    "uncertain_measurement_from_string(string, flags)",
+    "to_string(unit|measurement, flags)",
+    "addUserDefinedUnit(string, precise_unit)",
+    "setUnitsDomain(uint32_t)",
+    "getCommodity(string)",
+    "root(unit, int)",
+    "sqrt(unit)",
+    "is_valid(unit|measurement)",
+    "is_convertible(unit)"
+  ]
 }

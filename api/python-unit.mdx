@@ -1,0 +1,373 @@
+---
+title: "Python Unit class — API reference"
+description: "Complete reference for the Unit class in units_llnl: construct, inspect, convert, and compose units from strings or other units at runtime."
+keywords: ["Unit", "Python API", "units_llnl", "llnl units", "unit conversion", "multiplier", "commodity"]
+---
+
+The `Unit` class is the core type in the `units_llnl` Python library. It maps to a `precise_unit` in C++ and is **immutable** — methods that modify a unit always return a new `Unit` object rather than mutating the original. You can construct a `Unit` from a string, from another unit with a multiplier, or from a unit string paired with a commodity. Units support arithmetic, f-string formatting, and use as dictionary keys.
+
+```python
+from units_llnl import Unit
+
+u_m  = Unit("m")
+u_cm = Unit("cm")
+
+# Convert 10 m to cm
+result = u_m.convert(10, u_cm)
+assert result == 1000.0
+
+# Compose units with operators
+velocity = Unit("m") / Unit("s")
+area     = Unit("m") ** 2
+```
+
+<Note>
+  The `Unit` object wraps `precise_unit` from the C++ library. It stores a
+  double-precision multiplier alongside compact base-unit exponents, giving
+  roughly 13 significant digits of precision.
+</Note>
+
+---
+
+## Constructors
+
+<ResponseField name="Unit(unit_str)" type="constructor">
+  Construct a unit from a string. The string is parsed by the library's runtime
+  parser, which recognises SI prefixes, derived units, and a wide range of
+  domain-specific strings.
+
+  ```python
+  from units_llnl import Unit
+
+  u1 = Unit("m")       # meter
+  u2 = Unit("km/h")    # kilometers per hour
+  u3 = Unit("N*m")     # newton-meter
+  ```
+</ResponseField>
+
+<ResponseField name="Unit(unit_str, commodity_str)" type="constructor">
+  Construct a unit from a unit string paired with a commodity string. Commodities
+  let you distinguish otherwise identical units that carry different physical
+  meaning (for example, thermal versus electrical megawatts).
+
+  ```python
+  u = Unit("MW", "electricity")
+  print(u.commodity)  # "electricity"
+  ```
+</ResponseField>
+
+<ResponseField name="Unit(multiplier, unit)" type="constructor">
+  Construct a unit by scaling an existing `Unit` by a float multiplier. The
+  result has the same base dimensions as `unit` but with its multiplier set to
+  `multiplier * unit.multiplier`.
+
+  ```python
+  u_m  = Unit("m")
+  u_mm = Unit(0.001, u_m)   # millimeter
+  assert u_mm.multiplier == pytest.approx(0.001)
+  ```
+</ResponseField>
+
+---
+
+## Methods
+
+### Comparison and compatibility
+
+<ResponseField name="is_exactly_the_same(other)" type="bool">
+  Returns `True` when both the base-unit data and the multiplier are bit-for-bit
+  identical to `other`. No rounding tolerance is applied.
+
+  ```python
+  assert Unit("m").is_exactly_the_same(Unit("m"))
+  assert not Unit("m").is_exactly_the_same(Unit("km"))
+  ```
+</ResponseField>
+
+<ResponseField name="has_same_base(other)" type="bool">
+  Returns `True` when both units share the same base dimensions regardless of
+  their multipliers or flags.
+
+  ```python
+  assert Unit("m").has_same_base(Unit("km"))
+  assert not Unit("m").has_same_base(Unit("s"))
+  ```
+</ResponseField>
+
+<ResponseField name="equivalent_non_counting(other)" type="bool">
+  Returns `True` when the two units are equivalent after ignoring counting bases
+  (radians, moles, counts). Useful when you want dimensional compatibility
+  without caring about pure-counting dimensions.
+</ResponseField>
+
+<ResponseField name="is_convertible_to(other)" type="bool">
+  Returns `True` if a value in this unit can be converted to `other`. Currently
+  equivalent to `equivalent_non_counting`, though future library versions may
+  relax this slightly.
+
+  ```python
+  assert Unit("m").is_convertible_to(Unit("ft"))
+  assert not Unit("m").is_convertible_to(Unit("kg"))
+  ```
+</ResponseField>
+
+### Conversion
+
+<ResponseField name="convert(value, unit_out)" type="float">
+  Convert `value` from the current unit into `unit_out`. `unit_out` may be a
+  `Unit` object or a string. Keyword arguments are supported.
+
+  ```python
+  u_m  = Unit("m")
+  u_cm = Unit("cm")
+
+  v1 = u_m.convert(10, u_cm)
+  assert v1 == 1000.0
+
+  # Using keyword arguments
+  v2 = u_m.convert(unit_out=u_cm, value=20)
+  assert v2 == 2000.0
+
+  # Pass a string directly
+  v3 = u_m.convert(5, "ft")
+  ```
+
+  <ParamField path="value" type="float" required>
+    The numeric quantity expressed in the current unit.
+  </ParamField>
+
+  <ParamField path="unit_out" type="Unit | str" required>
+    The target unit. Accepts a `Unit` object or a unit string.
+  </ParamField>
+</ResponseField>
+
+### State inspection
+
+<ResponseField name="is_valid()" type="bool">
+  Returns `True` if the unit is a valid unit (not an error unit and not NaN).
+
+  ```python
+  assert Unit("m").is_valid()
+  assert not Unit("not_a_unit_xyz").is_valid()
+  ```
+</ResponseField>
+
+<ResponseField name="is_normal()" type="bool">
+  Returns `True` if the unit is a normal unit — not an error, NaN, or subnormal
+  value.
+</ResponseField>
+
+<ResponseField name="is_error()" type="bool">
+  Returns `True` if the unit holds the special error sentinel value (for example,
+  the result of an invalid unit conversion).
+</ResponseField>
+
+<ResponseField name="isfinite()" type="bool">
+  Returns `True` if the unit's multiplier is finite (not ±infinity).
+</ResponseField>
+
+<ResponseField name="isinf()" type="bool">
+  Returns `True` if the unit's multiplier is ±infinity.
+</ResponseField>
+
+<ResponseField name="is_per_unit()" type="bool">
+  Returns `True` when the per-unit flag is set. Per-unit values are dimensionless
+  ratios relative to a base value, commonly used in power-systems analysis.
+</ResponseField>
+
+<ResponseField name="is_equation()" type="bool">
+  Returns `True` when the equation flag is active. Equation units represent
+  logarithmic or scale-based relationships such as decibels or nepers.
+</ResponseField>
+
+### Mathematics
+
+<ResponseField name="root(power)" type="Unit">
+  Returns a new unit taken to the `1/power` root.
+
+  ```python
+  u_m2 = Unit("m") ** 2
+  u_m  = u_m2.root(2)
+  assert u_m.is_exactly_the_same(Unit("m"))
+  ```
+
+  <ParamField path="power" type="int" required>
+    The root to take. Must evenly divide all base-unit exponents.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="sqrt()" type="Unit">
+  Convenience method for `root(2)`. Returns a new unit which is the square root
+  of the current unit.
+
+  ```python
+  u_m = (Unit("m") ** 2).sqrt()
+  ```
+</ResponseField>
+
+### Mutation (returns new unit)
+
+<ResponseField name="set_multiplier(mult)" type="Unit">
+  Returns a new `Unit` identical to the current one but with the multiplier
+  replaced by `mult`.
+
+  ```python
+  u = Unit("m").set_multiplier(1000.0)  # equivalent to km in base terms
+  ```
+
+  <ParamField path="mult" type="float" required>
+    The new multiplier value.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="set_commodity(commodity)" type="Unit">
+  Returns a new `Unit` with the commodity set to the given integer commodity
+  code.
+
+  <ParamField path="commodity" type="int" required>
+    The integer commodity identifier.
+  </ParamField>
+</ResponseField>
+
+---
+
+## Properties
+
+<ResponseField name="multiplier" type="float">
+  The unit's scaling multiplier. For example, `Unit("km").multiplier` is `1000.0`
+  because one kilometer is 1000 meters.
+
+  ```python
+  assert Unit("km").multiplier == 1000.0
+  assert Unit("m").multiplier  == 1.0
+  ```
+</ResponseField>
+
+<ResponseField name="commodity" type="str">
+  The commodity string associated with this unit. Returns an empty string if no
+  commodity is set.
+
+  ```python
+  u = Unit("MW", "electricity")
+  print(u.commodity)  # "electricity"
+  ```
+</ResponseField>
+
+<ResponseField name="base_units" type="Unit">
+  Returns a new `Unit` representing the base dimensions of the current unit with
+  the multiplier stripped (set to 1.0).
+
+  ```python
+  u  = Unit("km")
+  bu = u.base_units
+  assert bu.multiplier == 1.0   # base of km is m with multiplier 1
+  ```
+</ResponseField>
+
+---
+
+## Operators
+
+<ResponseField name="* and / with Unit" type="Unit">
+  Multiplying or dividing two `Unit` objects produces a new `Unit` whose
+  multipliers are multiplied or divided and whose base-unit exponents are added
+  or subtracted.
+
+  ```python
+  newton  = Unit("kg") * Unit("m") / Unit("s") ** 2
+  per_sec = Unit("s").inv() if hasattr(Unit("s"), "inv") else ~Unit("s")
+  ```
+</ResponseField>
+
+<ResponseField name="~" type="Unit">
+  The bitwise NOT operator returns the inverse of the unit (`1 / unit`).
+
+  ```python
+  per_meter = ~Unit("m")
+  ```
+</ResponseField>
+
+<ResponseField name="**" type="Unit">
+  Raises the unit to an integer power and returns a new `Unit`.
+
+  ```python
+  area   = Unit("m") ** 2     # m²
+  volume = Unit("m") ** 3     # m³
+  ```
+</ResponseField>
+
+<ResponseField name="== and !=" type="bool">
+  Compare two units for equality. Equality is checked using a rounding tolerance
+  of roughly six significant digits (matching the precision of a 32-bit float),
+  not bit-for-bit identity. Use `is_exactly_the_same` for exact comparison.
+
+  ```python
+  assert Unit("m")  == Unit("m")
+  assert Unit("km") != Unit("m")
+  ```
+</ResponseField>
+
+<ResponseField name="* and / with float" type="Measurement">
+  Multiplying or dividing a `Unit` by a float (or a float by a `Unit`) produces
+  a `Measurement`.
+
+  ```python
+  from units_llnl import Unit
+
+  distance = 5.0 * Unit("m")   # Measurement: 5.0 m
+  speed    = 10.0 * Unit("m") / Unit("s")  # via composed unit then scalar
+  ```
+</ResponseField>
+
+---
+
+## String and bool behaviour
+
+`str(unit)` returns the string representation of the unit. This string is
+guaranteed to round-trip — passing it back to `Unit(...)` will produce an
+equivalent unit — but it may not be identical to the string originally used
+to construct the unit.
+
+`bool(unit)` returns `True` if the unit is valid and has a non-zero multiplier.
+
+```python
+u = Unit("km/h")
+print(str(u))    # e.g. "km/h"
+print(bool(u))   # True
+
+err = Unit("!!invalid!!")
+print(bool(err)) # False
+```
+
+---
+
+## f-string formatting
+
+Units support f-string formatting. The formatted output is the same as
+`str(unit)`.
+
+```python
+u = Unit("m/s")
+print(f"Unit: {u}")   # "Unit: m/s"
+```
+
+<Tip>
+  The string produced by f-string formatting is guaranteed to reconstruct the
+  same unit when passed back to `Unit(...)`.
+</Tip>
+
+---
+
+## Use as a dictionary key
+
+`Unit` objects may be used as keys in Python dictionaries (they are hashable).
+
+```python
+unit_names = {
+    Unit("m"):  "meter",
+    Unit("s"):  "second",
+    Unit("kg"): "kilogram",
+}
+
+print(unit_names[Unit("m")])  # "meter"
+```

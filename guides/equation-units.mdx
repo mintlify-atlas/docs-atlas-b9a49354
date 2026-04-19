@@ -1,0 +1,117 @@
+---
+title: "Equation-based units: logarithms and scales"
+description: "Some units use equations instead of fixed multipliers. Learn which equation units the library supports and how to convert values to and from them."
+keywords: ["equation units", "logarithm", "decibel", "neper", "bel", "Beaufort", "Saffir-Simpson", "Fujita", "Richter", "is_equation", "convert_equnit_to_value"]
+---
+
+Most units are related by a fixed multiplier: a kilometer is always 1000 meters. But some units use a non-linear equation to map values — decibels express a power ratio on a logarithmic scale, the Beaufort scale maps a discrete wind description to a wind speed through an approximating polynomial, and the Richter scale encodes earthquake energy in a compressed logarithmic form. These are called **equation units** in the library.
+
+## What makes a unit an equation unit
+
+Equation units are identified by an equation flag set in the `unit_base`. You can check for this with the `is_equation()` method on any unit:
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+auto dB = unit_from_string("dB");
+bool eq = dB.is_equation(); // true
+
+auto meter = unit_from_string("m");
+bool neq   = meter.is_equation(); // false
+```
+
+Internally, equation types 0–15 are logarithmic forms; types 16–31 cover density scales, wind scales, seismic scales, and a few others. The equation type index is extracted with:
+
+```cpp
+unsigned short eq_type = units::precise::custom::eq_type(u.base_units());
+```
+
+## Supported equation types
+
+<AccordionGroup>
+  <Accordion title="Logarithmic (types 0–15)">
+    | Index | Equation | Common use |
+    |---|---|---|
+    | 0 | log₁₀(x) | general log |
+    | 1 | nepers (Np) | amplitude/field ratio |
+    | 2 | bels (B) | power ratio |
+    | 3 | decibels (dB) | power ratio ×10 |
+    | 4 | −log₁₀(x) | pH, pOH |
+    | 5 | −log₁₀(x) / 2 | |
+    | 6 | −log₁₀(x) / 3 | |
+    | 7 | −log₁₀(x) / log₁₀(50000) | |
+    | 8 | log₂(x) | |
+    | 9 | ln(x) | natural log |
+    | 10 | log₁₀(x) | (alias) |
+    | 11 | 10 · log₁₀(x) | dB power |
+    | 12 | 2 · log₁₀(x) | |
+    | 13 | 20 · log₁₀(x) | dB field/amplitude |
+    | 14 | log₁₀(x) / log₁₀(3) | |
+    | 15 | 0.5 · ln(x) | |
+  </Accordion>
+  <Accordion title="Scale and density units (types 16–31)">
+    | Index | Unit | Description |
+    |---|---|---|
+    | 16 | API Gravity | petroleum density scale |
+    | 17 | Degree Baumé Light | density scale, light liquids |
+    | 18 | Degree Baumé Heavy | density scale, heavy liquids |
+    | 22 | Saffir-Simpson scale | hurricane wind scale |
+    | 23 | Beaufort scale | wind force scale |
+    | 24 | Fujita scale | tornado intensity scale |
+    | 27 | Prism diopter | 100 · tan(x) |
+    | 29 | Moment magnitude scale | earthquake (Richter) |
+    | 30 | Energy magnitude scale | earthquake energy |
+    | 19–21, 25–26, 28, 31 | UNDEFINED | reserved for future use |
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+The wind scales (Beaufort, Saffir-Simpson, Fujita) approximate a continuous mapping from discrete categories to wind speed using a polynomial fit. They are generally convertible to velocity units such as `m/s`, but the conversion is an approximation.
+</Note>
+
+## Converting values to and from equation units
+
+Two free functions in the `units::precise::equation` namespace perform the actual value transformation:
+
+```cpp
+// Convert a value expressed in equation units → underlying physical value
+double convert_equnit_to_value(double val, detail::unit_data UT);
+
+// Convert a physical value → its equation-unit representation
+double convert_value_to_equnit(double val, detail::unit_data UT);
+```
+
+For example, converting a wind speed in m/s to a Beaufort number:
+
+```cpp
+auto beaufort_unit = unit_from_string("Beaufort");
+auto ms_unit       = unit_from_string("m/s");
+
+double wind_mps = 15.0; // 15 m/s
+double beaufort = convert_value_to_equnit(wind_mps, beaufort_unit.base_units());
+// beaufort ≈ 7 (near gale)
+```
+
+A helper function determines whether a logarithmic unit operates on power quantities or on field/amplitude quantities (relevant for nepers, bels, and decibels):
+
+```cpp
+bool is_power_unit(detail::unit_data UT);
+```
+
+## Limitations
+
+<Warning>
+Equation units cannot be used with `quick_convert`. The `quick_convert` function requires a simple multiplicative relationship between units. Always use the full `convert` function or the explicit `convert_equnit_to_value` / `convert_value_to_equnit` functions when working with equation units.
+</Warning>
+
+Equation units use up the flags, count, and radian fields in the `unit_base`, leaving the remaining bits to define the underlying physical units. This means equation units cannot simultaneously carry arbitrary compound unit powers and an equation type.
+
+## When to use equation units vs regular units
+
+Use equation units when:
+- You need to parse or emit values in logarithmic notation (dB, nepers, bels)
+- You are working with data expressed on a named meteorological or seismic scale (Beaufort, Saffir-Simpson, Richter)
+- You are computing density on the API Gravity or Baumé scales
+
+Use regular units for everything else. The library performs standard multiplicative conversions for regular units and reserves the more expensive equation conversion path only for types where `is_equation()` is true.

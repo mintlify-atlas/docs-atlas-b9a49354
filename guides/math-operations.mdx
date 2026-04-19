@@ -1,0 +1,181 @@
+---
+title: "Math operations on units and measurements"
+description: "Arithmetic, power, root, rounding, and trig operations on measurements. Covers type traits, constexpr support, and quick_convert for lightweight conversions."
+keywords: ["math", "arithmetic", "pow", "sqrt", "root", "ceil", "floor", "trunc", "round", "fmod", "sin", "cos", "tan", "quick_convert", "units_math.hpp"]
+---
+
+The library supports a range of mathematical operations on measurements and units. Core arithmetic is available from `units/units.hpp`. Additional operations — rounding, trigonometry, and modulo — are available from the optional `units/units_math.hpp` header, which is header-only and requires no separate compilation step.
+
+## Core arithmetic
+
+The standard operators `*`, `/`, `+`, and `-` are overloaded for all measurement types. The result type matches the operand type.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+measurement length = 45.0 * m;
+measurement time   = 3.0 * s;
+
+measurement speed  = length / time;          // 15 m/s
+measurement area   = length * (20.0 * m);    // 900 m²
+measurement total  = length + (500.0 * m);   // 545 m
+
+// Adding different but compatible units — rhs auto-converts to lhs unit
+measurement dist = 1.0 * km + 500.0 * m;    // result in km
+```
+
+Multiplication and division with plain `double`s are also defined:
+
+```cpp
+measurement doubled = length * 2.0;   // 90 m
+measurement half    = length / 2.0;   // 22.5 m
+```
+
+<Note>
+For `measurement` and `precise_measurement`, `+` and `-` with a plain `double` are not defined — the unit would be ambiguous. Use `fixed_measurement` when you need to add or subtract scalars.
+</Note>
+
+## Power and root operations
+
+`pow`, `root`, and `sqrt` are free functions that work on any measurement type. The unit's powers are transformed accordingly.
+
+```cpp
+measurement side = 5.0 * m;
+
+measurement area   = pow(side, 2);   // 25 m²
+measurement volume = pow(side, 3);   // 125 m³
+measurement back   = root(area, 2);  // 5 m  (square root)
+measurement sq     = sqrt(area);     // 5 m  (convenience alias for root(..., 2))
+```
+
+<Warning>
+`root` and `sqrt` require that the resulting unit powers are integral. For example, `sqrt` of `m²` produces `m`, but `sqrt` of `m³` returns an error unit. The library does not support arbitrary fractional unit powers (except for a specific `√Hz` definition used in noise density units).
+</Warning>
+
+`pow` and `root` are also defined directly on unit objects:
+
+```cpp
+unit area_unit   = m.pow(2);    // m²
+unit volume_unit = m.pow(3);    // m³
+unit inv_area    = m.pow(-2);   // m⁻²
+```
+
+## `quick_convert` for constexpr conversions
+
+`quick_convert` is a `constexpr` function that computes the conversion factor between two units with the same base. It does not handle equation units or units that require the full runtime conversion machinery.
+
+```cpp
+constexpr double factor = quick_convert(km, m);   // 1000.0
+constexpr double mph_to_mps = quick_convert(mph, m / s); // ≈ 0.44704
+
+// Convert a specific value
+constexpr double val_m = quick_convert(5.0, km, m); // 5000.0
+```
+
+<Tip>
+Use `quick_convert` in `constexpr` contexts or hot paths where you know the units have the same base dimension and are not equation units. For general conversions — including temperatures and equation units — use the regular `convert` function.
+</Tip>
+
+## Additional math operations (`units_math.hpp`)
+
+Include the optional header to get rounding, trigonometric, and modulo functions that mirror `<cmath>`:
+
+```cpp
+#include <units/units.hpp>
+#include <units/units_math.hpp>
+using namespace units;
+```
+
+### Rounding and truncation
+
+These operate only on the value part of the measurement; the unit is unchanged.
+
+```cpp
+measurement dist = 4.7 * m;
+
+measurement c = ceil(dist);   // 5 m
+measurement f = floor(dist);  // 4 m
+measurement t = trunc(dist);  // 4 m
+measurement r = round(dist);  // 5 m
+```
+
+### Trigonometric functions
+
+Trigonometric operations are only valid when the measurement is convertible to radians. Passing a non-angle measurement returns a `NaN` result.
+
+```cpp
+measurement angle = 1.5708 * rad; // π/2
+
+double s = sin(angle).value(); // ≈ 1.0
+double c = cos(angle).value(); // ≈ 0.0
+double t = tan(angle).value(); // ≈ very large
+```
+
+### Modulo and hypot
+
+```cpp
+measurement a = 10.7 * m;
+measurement b = 3.0 * m;
+
+measurement remainder = fmod(a, b);       // ≈ 1.7 m
+
+// hypot works for two or three measurements with compatible units
+measurement x = 3.0 * m;
+measurement y = 4.0 * m;
+measurement hyp = hypot(x, y);            // 5 m
+```
+
+### `multiplies` and `divides`
+
+These behave like `*` and `/` but handle per-unit measurements specially. `divides` produces a `per_unit` result when both operands share the same base; `multiplies` removes the `per_unit` flag when one operand is per-unit and the other has the matching base.
+
+```cpp
+// divides → per_unit result when bases match (e.g., strain)
+measurement strain = divides(delta_length, total_length);
+
+// multiplies → removes per_unit when bases match
+measurement recovered = multiplies(strain, total_length);
+```
+
+### `cbrt`
+
+Cube root of a measurement. Follows the same rules as `sqrt`: the resulting unit powers must be integral.
+
+```cpp
+measurement volume = 27.0 * m.pow(3);
+measurement side   = cbrt(volume); // 3 m
+```
+
+## Type traits
+
+`units_math.hpp` exports three type traits that are useful for writing generic code:
+
+```cpp
+#include <units/units_math.hpp>
+
+static_assert(units::is_unit<units::unit>::value);
+static_assert(units::is_unit<units::precise_unit>::value);
+static_assert(!units::is_unit<double>::value);
+
+static_assert(units::is_measurement<units::measurement>::value);
+static_assert(units::is_measurement<units::uncertain_measurement>::value);
+static_assert(!units::is_measurement<units::unit>::value);
+
+static_assert(units::is_precise_measurement<units::precise_measurement>::value);
+static_assert(!units::is_precise_measurement<units::measurement>::value);
+```
+
+Use these in `if constexpr` branches or `std::enable_if` constraints when writing template functions that need to branch on whether a type is a unit or measurement.
+
+## `constexpr` support
+
+Most unit construction and arithmetic is tagged `constexpr`, allowing computations to occur at compile time:
+
+```cpp
+constexpr auto speed_unit = units::m / units::s;
+constexpr auto area_unit  = units::m * units::m;
+constexpr double conv     = quick_convert(units::km, units::m); // evaluated at compile time
+```
+
+String-to-unit conversions (`unit_from_string`, `to_string`) are runtime-only and cannot be used in `constexpr` expressions.

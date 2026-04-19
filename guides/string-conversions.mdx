@@ -1,0 +1,165 @@
+---
+title: "Converting units to and from strings"
+description: "Parse unit and measurement strings at runtime using unit_from_string and measurement_from_string, and convert back to strings using to_string."
+keywords: ["unit_from_string", "measurement_from_string", "to_string", "string conversion", "parsing", "precise_unit"]
+---
+
+The units library can parse almost any unit string you are likely to encounter in practice — from terse symbols like `m/s` to spelled-out phrases like `meters per second` — and can convert any unit or measurement back to a canonical string representation. These conversions are the primary entry point for handling unit-bearing user input and output at runtime.
+
+## Parsing units from strings
+
+Four functions convert a string into a unit or measurement type. All accept an optional `flags` argument; in most cases you can omit it and rely on the defaults.
+
+<AccordionGroup>
+  <Accordion title="unit_from_string(string, flags) → precise_unit">
+    Parses a unit expression and returns a `precise_unit`. This is the main function for interpreting unit strings.
+
+    ```cpp
+    #include <units/units.hpp>
+    using namespace units;
+
+    precise_unit speed = unit_from_string("km/h");
+    precise_unit density = unit_from_string("kg/m^3");
+    precise_unit rate = unit_from_string("3.5 kg/m^3"); // value becomes part of the multiplier
+    ```
+
+    The function is flexible by design. All of the following produce the same `m/s` unit:
+
+    ```cpp
+    unit_from_string("m/s");
+    unit_from_string("meter/second");
+    unit_from_string("meters per second");
+    unit_from_string("m per sec");
+    unit_from_string("m*s^-1");
+    unit_from_string("METERS/s");
+    unit_from_string("(second/meter)^(-1)");
+    unit_from_string("100 centimeters / 1000 ms");
+    ```
+  </Accordion>
+  <Accordion title="unit_cast_from_string(string, flags) → unit">
+    Identical to `unit_from_string` but returns a `unit` instead of `precise_unit`. Equivalent to calling `unit_from_string` then `unit_cast`.
+
+    ```cpp
+    unit u = unit_cast_from_string("45 mph");
+    ```
+  </Accordion>
+  <Accordion title="measurement_from_string(string, flags) → precise_measurement">
+    Interprets a string that includes a leading numeric value followed by a unit. Returns a `precise_measurement` containing both the value and unit.
+
+    ```cpp
+    auto meas = measurement_from_string("10 km/h");
+    double val = meas.value_as(precise::m / precise::s); // convert to m/s
+
+    // Written numbers are also supported
+    auto dist = measurement_from_string("three thousand four hundred and twenty-seven miles");
+    // → precise_measurement with value 3427 and unit miles
+
+    // Currency prefix notation
+    auto price = measurement_from_string("$27.92"); // value 27.92, currency unit
+    ```
+  </Accordion>
+  <Accordion title="uncertain_measurement_from_string(string, flags)">
+    Parses a string that includes a central value and an uncertainty, separated by a recognized uncertainty marker. See [Tracking measurement uncertainty](/guides/uncertain-measurements) for the full list of supported notations.
+
+    ```cpp
+    auto um = uncertain_measurement_from_string("3.1 +/- 0.3 m/s");
+    auto um2 = uncertain_measurement_from_string("3.5235(19) kg"); // concise notation
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Converting to strings
+
+`to_string` works on any unit or measurement type in the library. The primary goal of the output is a string that the corresponding `*_from_string` function will round-trip back to the original value. The secondary goal is human-readable notation.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+measurement density = 10.0 * kg / m.pow(3);
+measurement power   = 2.7 * MW;
+
+std::string s1 = to_string(density); // "10 kg/m^3"
+std::string s2 = to_string(power);   // "2.7 MW"
+
+uncertain_measurement um(10.0, 0.4, m);
+std::string s3 = to_string(um);      // "10+/-0.4 m"
+```
+
+`to_string` accepts an optional second argument `std::uint64_t match_flags` (defaults to `0`). Currently unused, it is reserved for future output customization such as UTF-8 symbol support.
+
+<Note>
+Stream operators (`<<`) are not included in the library. If you need them, you can add them in your own namespace using `to_string` as the implementation.
+</Note>
+
+## The `default_unit` function
+
+`default_unit(string)` returns the canonical unit for a named kind of measurement. This is useful when you need a reference unit for a physical dimension without parsing a specific value.
+
+```cpp
+precise_unit len_unit  = default_unit("length");   // precise::m
+precise_unit mass_unit = default_unit("mass");      // precise::kg
+precise_unit vel_unit  = default_unit("velocity");  // precise::m / precise::s
+```
+
+## The `flags` parameter
+
+All `*_from_string` functions accept a `std::uint32_t flags` argument that controls parsing behavior, including which [unit domain](/guides/domains) is active, whether matching is case-insensitive, and how the parser handles ambiguous strings.
+
+Common flags from the `unit_conversion_flags` enumeration:
+
+| Flag | Effect |
+|---|---|
+| `case_insensitive` | Ignores capitalization entirely |
+| `strict_si` | Requires strict SI capitalization rules |
+| `strict_ucum` | Applies UCUM standard interpretation |
+| `nuclear_units` | Treats `rad` as radiation absorbed dose |
+| `cooking_units` | Prioritizes cooking measurements for ambiguous symbols |
+| `no_commodities` | Skips commodity lookups (slight performance gain) |
+
+Flags can be combined with bitwise OR:
+
+```cpp
+auto u = unit_from_string("rad", units::nuclear_units | units::case_insensitive);
+```
+
+For the full list of flags and their descriptions, see the [Conversion flags reference](/reference/conversion-flags).
+
+## Checking parse validity
+
+An unsuccessful parse does not throw. Instead, `unit_from_string` returns a unit whose multiplier is `NaN`, which you can detect with `std::isnan` or the `is_valid` free function:
+
+```cpp
+#include <units/units.hpp>
+#include <cmath>
+using namespace units;
+
+auto meas = measurement_from_string(userInput);
+
+// Option 1: check the unit's convertibility to the expected dimension
+if (!meas.units().is_convertible(precise::m / precise::s)) {
+    throw std::invalid_argument("expected a velocity unit");
+}
+
+// Option 2: check for NaN on the value
+double val = meas.value_as(precise::m / precise::s);
+if (std::isnan(val)) {
+    // conversion failed — units are incompatible
+}
+```
+
+A real-world pattern for accepting user-supplied values with unit conversion:
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+double GetVelocityAs(const std::string& input, precise_unit out)
+{
+    auto meas = measurement_from_string(input);
+    return meas.value_as(out);
+}
+
+// Usage:
+double mps = GetVelocityAs("45 mph", precise::m / precise::s);
+```

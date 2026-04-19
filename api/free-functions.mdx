@@ -1,0 +1,317 @@
+---
+title: "Free functions — Units C++ API"
+description: "Reference for all top-level free functions in llnl/units: unit conversion, string parsing and formatting, user-defined units, domains, and commodities."
+keywords: ["convert", "unit_from_string", "to_string", "user defined units", "C++ API", "llnl units", "measurement_from_string"]
+---
+
+The llnl/units library exposes most of its runtime functionality through free functions in the `units` namespace. These cover unit conversion with and without a base value, string parsing and formatting, user-defined unit registration, domain selection, and commodity management. Functions that require string processing or root operations are only available when the compiled library (not header-only mode) is linked.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+double v = convert(60.0, mph, m / s);       // ≈ 26.82
+auto u   = unit_from_string("km/h");        // precise_unit
+auto s   = to_string(u);                    // "km/h"
+```
+
+---
+
+## Unit conversion
+
+### `convert`
+
+<ResponseField name="convert(unit from, unit to)" type="double">
+  Returns the multiplicative conversion factor from `from` to `to`. For example, `convert(km, m)` returns `1000.0`.
+
+  ```cpp
+  double factor = convert(units::km, units::m); // 1000.0
+  ```
+</ResponseField>
+
+<ResponseField name="convert(double val, unit from, unit to)" type="double">
+  Converts `val` measured in `from` to the equivalent value in `to`.
+
+  ```cpp
+  double speed_si = convert(60.0, mph, m / s); // ≈ 26.8224
+  ```
+</ResponseField>
+
+<ResponseField name="convert(double val, unit from, unit to, double baseValue)" type="double">
+  Converts `val` using a per-unit base value. Required when either `from` or `to` carries the per-unit flag, where the base value defines the reference quantity.
+
+  ```cpp
+  // Convert 0.5 per-unit voltage to volts, with 230 V base
+  double volts = convert(0.5, pu, V, 230.0); // 115.0
+  ```
+</ResponseField>
+
+<ResponseField name="convert(double val, unit from, unit to, double basePower, double baseVoltage)" type="double">
+  Power-systems overload that accepts separate base power (in watts or VA) and base voltage (in volts). Used for per-unit conversions in electrical power calculations where both base quantities are needed.
+
+  ```cpp
+  double val_si = convert(1.0, pu, W, 100e6, 138e3);
+  ```
+</ResponseField>
+
+<Warning>
+  Attempting to convert between incompatible units (e.g., meters to seconds) returns `constants::invalid_conversion` (a NaN). Check with `std::isnan` before using the result.
+</Warning>
+
+### `quick_convert`
+
+<ResponseField name="quick_convert(unit from, unit to)" type="constexpr double">
+  `constexpr` conversion factor between two units with identical base dimensions and no equation flag. Does not handle temperature offsets or equation units. Returns a NaN when the units are not directly proportional.
+
+  ```cpp
+  constexpr double f = quick_convert(km, m); // 1000.0 at compile time
+  ```
+</ResponseField>
+
+<ResponseField name="quick_convert(double val, unit from, unit to)" type="constexpr double">
+  `constexpr` value conversion. Equivalent to `val * quick_convert(from, to)`.
+
+  ```cpp
+  constexpr double d = quick_convert(5.0, km, m); // 5000.0
+  ```
+</ResponseField>
+
+<Tip>
+  Prefer `quick_convert` in `constexpr` contexts or tight loops where you know the units are proportional. Use `convert` for general-purpose conversion, including temperatures and equation units.
+</Tip>
+
+### Mathematical operations on units
+
+<ResponseField name="root(unit u, int power)" type="unit">
+  Returns the `power`-th root of `u`. Returns the error unit when the root is not an exact integer division of all base-unit exponents. `power` may be negative.
+
+  ```cpp
+  unit side = root(m.pow(2), 2); // m
+  ```
+
+  <Warning>
+    Not available in header-only mode. Requires linking the compiled library.
+  </Warning>
+</ResponseField>
+
+<ResponseField name="sqrt(unit u)" type="unit">
+  Convenience wrapper for `root(u, 2)`.
+</ResponseField>
+
+---
+
+## String parsing
+
+All parsing functions accept an optional `flags` argument of type `std::uint64_t`. When omitted, the current default flags are used (see `setDefaultFlags`). All string-returning functions are not available in header-only mode.
+
+### Unit parsing
+
+<ResponseField name="unit_from_string(std::string str, uint64_t flags = default)" type="precise_unit">
+  Parses `str` into a `precise_unit`. Understands SI prefixes, compound expressions with `/`, `*`, `^`, and many hundreds of common unit names and symbols.
+
+  ```cpp
+  precise_unit u = unit_from_string("kPa");        // kiloPascals
+  precise_unit v = unit_from_string("m^2/s");      // square meters per second
+  precise_unit bad = unit_from_string("not_a_unit");
+  if (!is_valid(bad)) { /* handle error */ }
+  ```
+</ResponseField>
+
+<ResponseField name="unit_cast_from_string(std::string str, uint64_t flags = default)" type="unit">
+  Same as `unit_from_string` followed by `unit_cast`. Convenient when only `unit` precision is needed.
+</ResponseField>
+
+<ResponseField name="default_unit(std::string quantity)" type="precise_unit">
+  Returns a canonical unit for a named physical quantity. For example, `default_unit("length")` returns `precise::m`, and `default_unit("pressure")` returns `precise::Pa`.
+
+  ```cpp
+  precise_unit len_unit = default_unit("length");    // m
+  precise_unit mass_unit = default_unit("mass");     // kg
+  ```
+</ResponseField>
+
+### Measurement parsing
+
+<ResponseField name="measurement_from_string(std::string str, uint64_t flags = default)" type="precise_measurement">
+  Parses a string of the form `"<value> <unit>"` into a `precise_measurement`. The value and unit may be separated by whitespace or combined (e.g., `"45.0m"` or `"45.0 m"`).
+
+  ```cpp
+  precise_measurement speed = measurement_from_string("60 mph");
+  double mps = speed.value_as(precise::m / precise::s); // ≈ 26.82
+  ```
+</ResponseField>
+
+<ResponseField name="measurement_cast_from_string(std::string str, uint64_t flags = default)" type="measurement">
+  Same as `measurement_from_string` followed by `measurement_cast`. Returns a `measurement` using `unit` precision.
+</ResponseField>
+
+### Uncertain measurement parsing
+
+<ResponseField name="uncertain_measurement_from_string(std::string str, uint64_t flags = default)" type="uncertain_measurement">
+  Parses a string containing a value, uncertainty, and unit. Supports three notations:
+
+  - **± notation**: `"9.81 ± 0.01 m/s^2"` or `"9.81 +/- 0.01 m/s^2"`
+  - **Compact notation**: `"1.602176634(98)e-19 C"` (parenthesized digits replace the last digits of the value)
+
+  ```cpp
+  auto g = uncertain_measurement_from_string("9.80665(5) m/s^2");
+  // value = 9.80665, uncertainty = 0.00005
+  ```
+</ResponseField>
+
+---
+
+## String formatting
+
+<ResponseField name="to_string(unit|precise_unit|measurement|precise_measurement|fixed_measurement|fixed_precise_measurement|uncertain_measurement u, uint64_t flags = default)" type="std::string">
+  Converts any supported unit or measurement type to a human-readable string. The output uses standard unit symbols and SI prefixes where recognized.
+
+  ```cpp
+  std::string s1 = to_string(m / s);            // "m/s"
+  std::string s2 = to_string(45.0 * km);        // "45 km"
+  std::string s3 = to_string(unit_from_string("kPa")); // "kPa"
+  ```
+
+  <Note>
+    The `flags` argument is intended to support different output standards in future releases. Currently the main effect is domain-specific unit naming.
+  </Note>
+</ResponseField>
+
+---
+
+## User-defined units
+
+User-defined units extend the string-conversion system at runtime. They have a minor performance cost (an extra hash-map lookup) that can be eliminated when not needed.
+
+<ResponseField name="addUserDefinedUnit(std::string name, precise_unit u)" type="void">
+  Registers `u` under the name `name` for both input (parsing) and output (formatting).
+
+  ```cpp
+  addUserDefinedUnit("myUnit", 42.0 * precise::m);
+  precise_unit my = unit_from_string("myUnit"); // 42.0 m
+  ```
+</ResponseField>
+
+<ResponseField name="addUserDefinedInputUnit(std::string name, precise_unit u)" type="void">
+  Registers `u` under `name` for parsing only. The name will not appear in `to_string` output.
+</ResponseField>
+
+<ResponseField name="addUserDefinedOutputUnit(std::string name, precise_unit u)" type="void">
+  Registers a preferred output string `name` for the unit `u`. Used to control how `to_string` formats a particular unit.
+</ResponseField>
+
+<ResponseField name="removeUserDefinedUnit(std::string name)" type="void">
+  Removes the unit registered under `name` (input, output, or both).
+</ResponseField>
+
+<ResponseField name="clearUserDefinedUnits()" type="void">
+  Removes all user-defined units from the registry.
+</ResponseField>
+
+<ResponseField name="disableUserDefinedUnits()" type="void">
+  Disables the user-defined unit lookup entirely, eliminating the associated hash-map overhead. Useful in performance-critical paths where custom units are not needed.
+</ResponseField>
+
+<ResponseField name="enableUserDefinedUnits()" type="void">
+  Re-enables user-defined unit lookup (enabled by default at startup).
+</ResponseField>
+
+<Warning>
+  Modifying user-defined units while other threads are performing string conversions is not thread-safe. Commodity operations (via `addUserDefinedCommodity`) are documented as thread-safe.
+</Warning>
+
+---
+
+## Unit domains
+
+Domains control how ambiguous unit names are resolved during string conversion. For example, the string `"rad"` means radians by default but means radiation absorbed dose in the `Nuclear` domain.
+
+<ResponseField name="setUnitsDomain(uint64_t domain)" type="uint64_t">
+  Sets the default domain for string conversions and returns the previous domain value. Use constants from the `units::domains` namespace as arguments.
+
+  ```cpp
+  auto prev = setUnitsDomain(units::domains::nuclear);
+  auto rad_dose = unit_from_string("rad"); // now radiation absorbed dose
+  setUnitsDomain(prev); // restore
+  ```
+
+  Available domain constants include (but are not limited to):
+  - `units::domains::defaultDomain`
+  - `units::domains::ucum`
+  - `units::domains::astronomy`
+  - `units::domains::nuclear`
+
+  See the [Unit Domains guide](/guides/domains) for the full list.
+</ResponseField>
+
+---
+
+## Commodities
+
+Commodities allow `precise_unit` to distinguish physically identical units used in different material contexts (e.g., gallons of water vs. gallons of gasoline). Commodity operations are thread-safe.
+
+<ResponseField name="getCommodity(std::string name)" type="uint32_t">
+  Returns the numeric commodity code for the given commodity name. Returns a new unique code if the name is not yet registered.
+
+  ```cpp
+  uint32_t water = getCommodity("water");
+  uint32_t gas   = getCommodity("gasoline");
+  ```
+</ResponseField>
+
+<ResponseField name="getCommodityName(uint32_t code)" type="std::string">
+  Returns the name associated with a commodity code, or an empty string if the code is not registered.
+
+  ```cpp
+  std::string name = getCommodityName(water); // "water"
+  ```
+</ResponseField>
+
+<ResponseField name="addUserDefinedCommodity(std::string name, uint32_t code)" type="void">
+  Registers a custom commodity under a specific numeric code. Useful when codes need to be stable across sessions.
+</ResponseField>
+
+<ResponseField name="clearUserDefinedCommodities()" type="void">
+  Removes all user-defined commodities.
+</ResponseField>
+
+<ResponseField name="disableUserDefinedCommodities()" type="void">
+  Disables the user-defined commodity lookup to eliminate its small performance overhead.
+</ResponseField>
+
+<ResponseField name="enableUserDefinedCommodities()" type="void">
+  Re-enables user-defined commodity lookup (enabled by default).
+</ResponseField>
+
+---
+
+## Complete example
+
+```cpp
+#include <units/units.hpp>
+#include <iostream>
+
+int main()
+{
+    using namespace units;
+
+    // Parse input from a config file
+    auto input = measurement_from_string("60 mph");
+
+    // Convert to SI
+    double mps = input.value_as(precise::m / precise::s);
+    std::cout << "Speed: " << mps << " m/s\n"; // ≈ 26.82 m/s
+
+    // User-defined unit
+    addUserDefinedUnit("league", 4828.032 * precise::m);
+    auto dist = measurement_from_string("3 league");
+    std::cout << dist.value_as(precise::km) << " km\n"; // ≈ 14.484 km
+
+    // Commodity example
+    uint32_t water_code = getCommodity("water");
+    precise_unit water_vol(precise::gal, water_code);
+    std::cout << to_string(water_vol) << "\n";
+
+    return 0;
+}
+```

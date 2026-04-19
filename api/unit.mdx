@@ -1,0 +1,286 @@
+---
+title: "unit type — C++ API reference"
+description: "Complete reference for the unit class: an 8-byte type pairing a float multiplier with base-unit exponents for runtime unit arithmetic."
+keywords: ["unit", "C++ API", "llnl units", "multiplier", "base units", "unit_cast"]
+---
+
+The `unit` class is the primary type in the llnl/units library. It pairs a 32-bit float multiplier with a compact 4-byte `detail::unit_data` bitfield encoding the powers of the ten base dimensions (meter, kilogram, second, ampere, kelvin, mole, candela, currency, count, and radians) plus four flags. The total size is 8 bytes, making `unit` cheap to pass by value. Equality comparisons use a tolerance of roughly 6 decimal digits, matching the precision of a 32-bit float.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+unit velocity = m / s;             // meters per second
+unit area     = m.pow(2);          // m²
+unit freq     = Hz;                // 1/s
+```
+
+<Note>
+  For higher-precision work (13 decimal digits, 16 bytes), use
+  [`precise_unit`](/api/precise-unit) instead.
+</Note>
+
+---
+
+## Constructors
+
+<ResponseField name="unit()" type="constexpr">
+  Default constructor. Produces the dimensionless unit with multiplier `1.0`.
+</ResponseField>
+
+<ResponseField name="unit(detail::unit_data base)" type="constexpr explicit">
+  Constructs a unit from raw base-unit data with multiplier `1.0`.
+</ResponseField>
+
+<ResponseField name="unit(double mult, detail::unit_data base)" type="constexpr">
+  Constructs a unit from a multiplier and base-unit data. The `double` multiplier is narrowed to `float`.
+</ResponseField>
+
+<ResponseField name="unit(float mult, detail::unit_data base)" type="constexpr explicit">
+  Constructs a unit from a single-precision multiplier and base-unit data.
+</ResponseField>
+
+<ResponseField name="unit(double mult, unit other)" type="constexpr">
+  Constructs a unit by scaling `other` by `mult`. Equivalent to `mult * other.multiplier()` combined with `other`'s base.
+</ResponseField>
+
+```cpp
+using namespace units;
+using namespace units::detail;
+
+unit u1;                                   // dimensionless 1.0
+unit u2(1000.0, unit_data(1,0,0,0,0,0,0,0,0,0,0,0,0,0)); // 1000 m
+unit u3(0.001, m);                         // millimeters (0.001 * m)
+```
+
+---
+
+## Member methods
+
+### Arithmetic
+
+<ResponseField name="inv()" type="constexpr unit">
+  Returns the reciprocal: `1 / unit`. The multiplier is inverted and all base-unit exponents are negated.
+
+  ```cpp
+  unit per_meter = m.inv();  // 1/m
+  ```
+</ResponseField>
+
+<ResponseField name="pow(int power)" type="constexpr unit">
+  Raises the unit to an integer power. `power` may be negative. Beware of overflow when intermediate exponents exceed the representable range (e.g., ±7 for meters).
+
+  ```cpp
+  unit m3 = m.pow(3);   // m³
+  unit m_2 = m.pow(-2); // 1/m²
+  ```
+</ResponseField>
+
+### Inspection
+
+<ResponseField name="multiplier()" type="constexpr double">
+  Returns the unit's scaling multiplier as a `double` (widened from the stored `float`).
+</ResponseField>
+
+<ResponseField name="multiplier_f()" type="constexpr float">
+  Returns the unit's scaling multiplier as a `float`.
+</ResponseField>
+
+<ResponseField name="cround()" type="float">
+  Returns the multiplier rounded to the precision level of a 32-bit float (~6 significant digits). Used internally for equality comparisons.
+</ResponseField>
+
+<ResponseField name="base_units()" type="constexpr detail::unit_data">
+  Returns the underlying `unit_data` bitfield encoding all base-unit exponents and flags.
+</ResponseField>
+
+### Comparison helpers
+
+<ResponseField name="is_exactly_the_same(unit other)" type="constexpr bool">
+  Strict equality check using exact `float` comparison on both the multiplier and the base. No tolerance is applied. Useful when you need to distinguish values that would otherwise compare equal under rounding.
+</ResponseField>
+
+<ResponseField name="has_same_base(unit|unit_data other)" type="constexpr bool">
+  Returns `true` when all ten base-unit exponents match, regardless of flags or multiplier.
+</ResponseField>
+
+<ResponseField name="equivalent_non_counting(unit|unit_data other)" type="constexpr bool">
+  Returns `true` when the seven physical base dimensions match (meter, kg, s, A, K, mol, cd, currency) while ignoring count, radians, and flags.
+</ResponseField>
+
+<ResponseField name="is_convertible(unit|unit_data other)" type="constexpr bool">
+  Returns `true` if the two units can be converted to each other. Currently equivalent to `equivalent_non_counting()`, though future releases may relax this.
+</ResponseField>
+
+### Flag and metadata queries
+
+<ResponseField name="unit_type_count()" type="constexpr int">
+  Returns the number of distinct base dimensions used (0–10). Does not consider the magnitude of each exponent, only whether each dimension is non-zero.
+
+  ```cpp
+  assert(m.unit_type_count() == 1);
+  assert((m / s).unit_type_count() == 2);
+  ```
+</ResponseField>
+
+<ResponseField name="is_per_unit()" type="constexpr bool">
+  Returns `true` when the per-unit flag is set. Per-unit indicates a dimensionless ratio relative to some base value (common in power-systems analysis).
+</ResponseField>
+
+<ResponseField name="is_equation()" type="constexpr bool">
+  Returns `true` when the equation flag is set. Equation units represent logarithmic or scale-based relationships such as decibels, nepers, or wind/earthquake scales.
+</ResponseField>
+
+<ResponseField name="has_i_flag()" type="constexpr bool">
+  Returns `true` when the imaginary flag is set. The i_flag is used for directional units (e.g., reactive power in power systems). When squared, it cancels: `i * conj(i) = 1`.
+</ResponseField>
+
+<ResponseField name="has_e_flag()" type="constexpr bool">
+  Returns `true` when the extra flag (`e_flag`) is set. Used to differentiate otherwise-identical units (e.g., distinguishing radiation dose `rad` from angle `rad`). Combines as OR during multiplication and XOR during division.
+</ResponseField>
+
+### Mutation
+
+<ResponseField name="clear_flags()" type="void">
+  Clears the per-unit, i_flag, e_flag, and equation flags on the unit in place.
+
+  ```cpp
+  unit u = someUnit;
+  u.clear_flags(); // all flags → 0
+  ```
+</ResponseField>
+
+---
+
+## Operators
+
+<ResponseField name="operator*(unit rhs)" type="constexpr unit">
+  Multiplies two units: multipliers are multiplied, base-unit exponents are added.
+
+  ```cpp
+  unit newton = kg * m / s.pow(2); // N = kg·m/s²
+  ```
+</ResponseField>
+
+<ResponseField name="operator/(unit rhs)" type="constexpr unit">
+  Divides two units: multipliers are divided, base-unit exponents are subtracted.
+
+  ```cpp
+  unit mps = m / s;
+  ```
+
+  <Note>
+    Dividing a unit by itself (e.g., `m / m`) produces the dimensionless unit `1`, not a per-unit value. Use explicit per-unit flags if you need that distinction.
+  </Note>
+</ResponseField>
+
+<ResponseField name="operator==(unit rhs)" type="bool">
+  Rounded equality. Returns `true` when both the base-unit exponents match and the multipliers agree to within ~6 significant digits.
+</ResponseField>
+
+<ResponseField name="operator!=(unit rhs)" type="bool">
+  Returns the logical inverse of `operator==`.
+</ResponseField>
+
+---
+
+## Free functions
+
+### Casting and classification
+
+<ResponseField name="unit_cast(precise_unit)" type="constexpr unit">
+  Narrows a `precise_unit` to a `unit` by casting the `double` multiplier to `float` and discarding the commodity code. The identity overload `unit_cast(unit)` is a no-op.
+
+  ```cpp
+  precise_unit pu = units::precise::m;
+  unit u = unit_cast(pu);
+  ```
+</ResponseField>
+
+<ResponseField name="is_unit_cast_lossless(precise_unit)" type="constexpr bool">
+  Returns `true` when the `double` multiplier in the `precise_unit` can be converted to `float` and back without losing any bits.
+</ResponseField>
+
+<ResponseField name="isnan(unit)" type="bool">
+  Returns `true` when the unit's multiplier is NaN.
+</ResponseField>
+
+<ResponseField name="isinf(unit)" type="bool">
+  Returns `true` when the unit's multiplier is ±infinity.
+</ResponseField>
+
+<ResponseField name="is_error(unit)" type="bool">
+  Returns `true` for the special error sentinel unit (all exponents at their minimum negative value with all flags set).
+</ResponseField>
+
+<ResponseField name="is_default(unit)" type="bool">
+  Returns `true` for the special default sentinel unit.
+</ResponseField>
+
+<ResponseField name="is_valid(unit)" type="bool">
+  Returns `true` when the unit is neither an error unit nor has a NaN multiplier.
+
+  ```cpp
+  auto u = unit_from_string("m/s");
+  if (!is_valid(u)) { /* parsing failed */ }
+  ```
+</ResponseField>
+
+<ResponseField name="is_temperature(unit)" type="bool">
+  Returns `true` for temperature units such as `degC`, `degF`, `K`, and `degR`.
+</ResponseField>
+
+<ResponseField name="is_normal(unit)" type="bool">
+  Returns `true` when the multiplier is a normal positive finite number, there is at least one base dimension present, and neither the error nor default sentinels are active. A quick sanity check for "does this unit make physical sense?"
+
+  ```cpp
+  assert(is_normal(m));
+  assert(!is_normal(unit{}));  // dimensionless 1.0 fails the "no base" check
+  ```
+</ResponseField>
+
+### Mathematical
+
+<ResponseField name="root(unit u, int power)" type="unit">
+  Takes the `power`-th root of a unit. Returns the error unit if the root is not an exact integer division of all exponents (e.g., `root(m.pow(3), 2)` is undefined).
+
+  ```cpp
+  unit side = root(m.pow(2), 2); // m
+  ```
+
+  <Warning>
+    This function is **not** `constexpr`; it requires the compiled library (not header-only mode).
+  </Warning>
+</ResponseField>
+
+<ResponseField name="sqrt(unit u)" type="unit">
+  Convenience wrapper for `root(u, 2)`.
+
+  ```cpp
+  unit side = sqrt(m.pow(2)); // m
+  ```
+</ResponseField>
+
+### Hashing
+
+<ResponseField name="std::hash<unit>" type="struct">
+  Specialization of `std::hash` for `unit`. Combines hashes of the rounded multiplier and the base-unit data. Enables use in `std::unordered_map` and similar containers.
+
+  ```cpp
+  std::unordered_map<units::unit, std::string> names;
+  names[units::m] = "meter";
+  names[units::s] = "second";
+  ```
+</ResponseField>
+
+---
+
+## Size and precision summary
+
+| Property | Value |
+|---|---|
+| Total size | 8 bytes |
+| Multiplier type | `float` (32-bit) |
+| Multiplier precision | ~6–7 significant digits |
+| Base-unit storage | 4-byte `detail::unit_data` bitfield |
+| Equality tolerance | ~6 significant digits |

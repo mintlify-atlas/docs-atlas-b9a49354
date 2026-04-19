@@ -1,0 +1,178 @@
+---
+title: "Physical constants in units::constants"
+description: "Reference for physical constants in the units::constants namespace, covering CODATA values, Planck units, atomic units, and planetary masses."
+---
+
+The units library provides a set of physical constants with appropriate units attached, all defined as `precise_measurement` values in the `units::constants` namespace. Values follow the NIST 2018 CODATA recommended values and incorporate the 2019 SI redefinition where applicable. Constants with known measurement uncertainties also appear in `units::constants::uncertain` as `uncertain_measurement` objects.
+
+## Using constants
+
+Constants are `precise_measurement` objects, so they carry both a numerical value and a `precise_unit`. You can multiply, divide, and convert them like any other measurement.
+
+```cpp
+#include "units/units.hpp"
+#include "units/physical_units.hpp"
+
+// Access a constant
+auto c  = units::constants::c;   // speed of light
+auto me = units::constants::me;  // electron mass
+
+// Derive a quantity
+auto rest_energy = me * units::constants::c * units::constants::c; // E = mc²
+
+// Convert to a specific unit
+double joules = rest_energy.value_as(units::precise::J);
+```
+
+## Fundamental constants
+
+All constants listed below are taken from the [NIST 2018 CODATA](https://physics.nist.gov/cuu/Constants/Table/allascii.txt) unless otherwise noted. Constants marked with the 2019 redefinition are now exact by definition in the revised SI system.
+
+| Symbol | Name | Notes |
+|---|---|---|
+| `g0` | Standard gravity | 9.80665 m/s² |
+| `G` | Gravitational constant | |
+| `c` | Speed of light | exact (2019 SI) |
+| `e` | Elementary charge | exact (2019 SI) |
+| `fCs` | Hyperfine transition frequency of caesium-133 | exact (2019 SI) |
+| `alpha` | Fine structure constant | |
+| `h` | Planck constant | exact (2019 SI) |
+| `hbar` | Reduced Planck constant (ℏ = h / 2π) | exact (2019 SI) |
+| `k` | Boltzmann constant | exact (2019 SI) |
+| `Na` | Avogadro constant | exact (2019 SI) |
+| `kcd` | Luminous efficacy | exact (2019 SI) |
+| `eps0` | Permittivity of free space (ε₀) | |
+| `mu0` | Permeability of free space (μ₀) | |
+| `R` | Molar gas constant | |
+| `s` | Stefan–Boltzmann constant | |
+| `H0` | Hubble constant | 69.8 km/s/Mpc |
+| `me` | Electron mass | |
+| `mp` | Proton mass | |
+| `a0` | Bohr radius | |
+| `F` | Faraday constant | |
+| `mu` | Atomic mass constant | |
+| `G0` | Conductance quantum | |
+| `Kj` | Josephson constant | |
+| `phi0` | Magnetic flux quantum | |
+| `Rk` | von Klitzing constant | |
+| `Rinf` | Rydberg constant | |
+
+## Planck units
+
+The Planck system of natural units is defined in the `units::constants::planck` namespace.
+
+```cpp
+#include "units/units.hpp"
+#include "units/physical_units.hpp"
+
+auto planck_length = units::constants::planck::length;
+auto planck_mass   = units::constants::planck::mass;
+auto planck_time_  = units::constants::planck::time;
+```
+
+| Symbol | Quantity |
+|---|---|
+| `planck::length` | Planck length |
+| `planck::mass` | Planck mass |
+| `planck::time` | Planck time |
+| `planck::charge` | Planck charge |
+| `planck::temperature` | Planck temperature |
+
+Planck constants are accessible from strings using the bracket notation: `[planck::length]` or the shorthand `planckLength`.
+
+## Atomic units
+
+Atomic units (related to the electron or to atomic-scale measurements as defined by the BIPM) live in the `units::constants::atomic` namespace.
+
+| Symbol | Quantity |
+|---|---|
+| `atomic::length` | Bohr radius (a₀) |
+| `atomic::mass` | Electron mass |
+| `atomic::time` | Atomic unit of time |
+| `atomic::charge` | Elementary charge (same as `e`) |
+| `atomic::energy` | Hartree energy |
+| `atomic::action` | Reduced Planck constant (ℏ) |
+
+```cpp
+auto au_energy = units::constants::atomic::energy; // Hartree
+```
+
+Atomic constants are accessible from strings using `[atomic::length]` etc.
+
+## Numerical constants
+
+A handful of pure numbers are defined in `units::constants` as `constexpr double` values for use in unit definitions and conversions elsewhere in the library.
+
+| Symbol | Value |
+|---|---|
+| `pi` | 3.14159265358979323846 |
+| `tau` | 2π |
+| `invalid_conversion` | signaling NaN |
+| `infinity` | positive infinity |
+| `standard_gravity` | 9.80665 (m/s²) |
+| `speed_of_light` | 299 792 458.0 (m/s) |
+
+```cpp
+#include "units/units.hpp"
+
+double circumference = 2.0 * units::constants::pi * radius_m;
+```
+
+## Planetary masses
+
+Masses for several solar-system bodies are available in `units::constants::Planetary::mass`.
+
+| Member | Body |
+|---|---|
+| `Planetary::mass::solar` | Sun |
+| `Planetary::mass::earth` | Earth |
+| `Planetary::mass::moon` | Moon |
+| `Planetary::mass::jupiter` | Jupiter |
+| `Planetary::mass::mars` | Mars |
+
+## Constants with uncertainties
+
+Several constants carry measurement uncertainties and are represented as `uncertain_measurement` objects in `units::constants::uncertain`.
+
+| Symbol | Quantity |
+|---|---|
+| `uncertain::G` | Gravitational constant |
+| `uncertain::eps0` | Permittivity of free space |
+| `uncertain::u0` | Permeability of free space |
+| `uncertain::H0` | Hubble constant |
+| `uncertain::me` | Electron mass |
+| `uncertain::mp` | Proton mass |
+| `uncertain::mu` | Atomic mass constant |
+| `uncertain::mn` | Neutron mass |
+| `uncertain::Rinf` | Rydberg constant |
+| `uncertain::alpha` | Fine structure constant |
+
+```cpp
+#include "units/units.hpp"
+#include "units/physical_units.hpp"
+
+auto G_unc = units::constants::uncertain::G;
+double val  = G_unc.value();
+double unc  = G_unc.uncertainty();
+```
+
+<Note>
+A few uncertain constants have more decimal places than `uncertain_measurement` can store. They are included for completeness; the uncertainty field will be rounded to the supported precision.
+</Note>
+
+## Accessing constants from strings
+
+Every constant listed here is available for string-based conversion by wrapping its symbol in square brackets.
+
+```cpp
+#include "units/units.hpp"
+
+// Parse a constant by name
+auto u = units::unit_from_string("[kcd]");   // luminous efficacy
+auto p = units::unit_from_string("[planck::length]");
+auto a = units::unit_from_string("[atomic::energy]");
+```
+
+<Tip>
+String access to constants follows the same flag system as other string conversions. Pass domain or matching flags as the second argument to `unit_from_string` if you need to control matching behavior.
+</Tip>

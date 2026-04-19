@@ -1,97 +1,111 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Units: Runtime C++ Library for Unit Conversions"
+description: "LLNL Units is a runtime C++ library for working with physical units of measurement, conversions between them, and string representations at runtime."
 ---
 
-## Setting up
+The Units library provides a powerful, flexible way to work with physical units of measurement at runtime. Developed at Lawrence Livermore National Laboratory, it handles conversions between hundreds of units, parses and generates human-readable unit strings, and supports complex scientific and engineering workflows — all within an efficient 8-byte unit representation.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running with the Units library in minutes with a working C++ or Python example.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Install via CMake submodule, header-only mode, or pip for the Python wrapper.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Concepts" icon="book" href="/concepts/units">
+    Understand the unit and measurement types that form the foundation of the library.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/unit">
+    Explore the full C++ and Python API surface with parameter details and examples.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why Units?
 
-Everything you need to create world-class documentation.
+The Units library is designed for applications where the number and variety of units is large, units are provided at runtime (e.g., from configuration files or user input), and string-based unit handling is required. It is used in production by [HELICS](https://helics.org) and [GridDyn](https://github.com/LLNL/GridDyn) for power systems simulation.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="String conversions" icon="arrow-right-arrow-left">
+    Parse `"10 km/h"` into a typed measurement and convert to any compatible unit at runtime.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Compact representation" icon="microchip">
+    Units fit in 8 bytes and measurements in 16 bytes — efficient to store and pass by value.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Uncertainty propagation" icon="chart-line">
+    Track measurement uncertainty through arithmetic with `uncertain_measurement`.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="User-defined units" icon="pen">
+    Register custom unit strings at runtime and use them in all conversion operations.
   </Card>
-</Columns>
+  <Card title="Domain support" icon="globe">
+    Switch between Astronomy, Nuclear, UCUM, and other domains for domain-specific unit meanings.
+  </Card>
+  <Card title="Python wrapper" icon="python">
+    Install `units-llnl` from PyPI for a Pythonic interface to the same conversion engine.
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Getting started
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Install the library">
+    Add the Units library to your project via CMake FetchContent, as a submodule, or install the Python package from PyPI.
+
+    ```bash
+    pip install units-llnl
+    ```
+
+    ```cmake CMakeLists.txt
+    include(FetchContent)
+    FetchContent_Declare(units
+      GIT_REPOSITORY https://github.com/LLNL/units.git
+      GIT_TAG        main
+    )
+    FetchContent_MakeAvailable(units)
+    target_link_libraries(my_app PRIVATE units::units)
+    ```
+  </Step>
+  <Step title="Include the header">
+    In your C++ source file, include the primary units header to access all types and functions.
+
+    ```cpp
+    #include <units/units.hpp>
+    using namespace units;
+    ```
+  </Step>
+  <Step title="Convert a unit from a string">
+    Parse a measurement from user input and convert it to your internal unit standard.
+
+    ```cpp
+    auto meas = measurement_from_string("45 mph");
+    double speed_mps = meas.value_as(precise::m / precise::s);
+    ```
+  </Step>
+  <Step title="Perform calculations">
+    Use measurement types for arithmetic — units are carried along and validated automatically.
+
+    ```cpp
+    measurement length = 100.0 * m;
+    measurement time   = 9.58 * s;
+    measurement speed  = length / time;
+    std::cout << to_string(speed) << "\n"; // "10.438... m/s"
+    ```
+  </Step>
+</Steps>
+
+## Choose your path
+
+<CardGroup cols={2}>
+  <Card title="String conversion guide" icon="file-code" href="/guides/string-conversions">
+    Learn how to parse unit strings from user input, configuration files, or data streams.
+  </Card>
+  <Card title="Math operations" icon="calculator" href="/guides/math-operations">
+    Perform arithmetic on measurements with automatic unit tracking.
+  </Card>
+  <Card title="User-defined units" icon="wrench" href="/guides/user-defined-units">
+    Add your own unit definitions for domain-specific or custom units.
+  </Card>
+  <Card title="Python integration" icon="python" href="/integration/python">
+    Use the `units-llnl` PyPI package to leverage the same engine from Python.
+  </Card>
+</CardGroup>

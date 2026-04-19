@@ -1,0 +1,145 @@
+---
+title: "Unit domains for context-specific conversions"
+description: "Select a domain such as COOKING, ASTRONOMY, or NUCLEAR to resolve ambiguous unit symbols differently. Set the domain globally, per-call, or at compile time."
+keywords: ["domains", "setUnitsDomain", "units::domains", "nuclear", "astronomy", "cooking", "ucum", "surveying", "climate", "UNITS_DOMAIN"]
+---
+
+Some unit symbols carry different meanings depending on the field. The symbol `rad` denotes radians in standard SI and electrical engineering, but in nuclear and radiation physics it means radiation absorbed dose. The symbol `C` is coulombs in SI but cup in recipes. The units library uses the concept of a **domain** to resolve these ambiguities consistently.
+
+A domain shifts interpretation only for a small, explicitly defined set of ambiguous symbols. All other symbols are unaffected.
+
+## Available domains
+
+All domain constants live in the `units::domains` namespace:
+
+| Constant | Description |
+|---|---|
+| `units::domains::ucum` | [Unified Code for Units of Measure](https://ucum.org/) — e.g., `B` means bel, `a` means julian year |
+| `units::domains::cooking` | Recipe units — `C` = cup, `T` = tablespoon, `t` = teaspoon |
+| `units::domains::astronomy` | Astronomical units — `am` = arcminute, `as` = arcsecond, `year` = mean tropical year |
+| `units::domains::nuclear` | Nuclear and radiation physics — `rad` = radiation absorbed dose |
+| `units::domains::surveying` | US surveying — `'` and variants = feet, `''` and variants = inches |
+| `units::domains::us_customary` | Combination of cooking and surveying |
+| `units::domains::climate` | Climate science — `kt` = kilo-tonne |
+| `units::domains::allDomains` | All of the above combined. Not recommended for general use. |
+
+## Symbol changes per domain
+
+<AccordionGroup>
+  <Accordion title="UCUM">
+    - `B` — bel (vs. byte in the default)
+    - `a` — julian year (vs. are in the default)
+  </Accordion>
+  <Accordion title="Astronomy">
+    - `am` — arcminute (vs. attometer)
+    - `as` — arcsecond (vs. attosecond)
+    - `year` — mean tropical year (vs. median calendar year in the default)
+  </Accordion>
+  <Accordion title="Cooking">
+    - `C` — cup (vs. coulomb)
+    - `T` — tablespoon (vs. tesla)
+    - `c` — cup (vs. speed of light)
+    - `t` — teaspoon (vs. metric tonne)
+    - `TB` — tablespoon (vs. terabyte)
+    - `smi` — smidgen (vs. square mile)
+    - `scruple` — slightly different definition
+    - `ds` — dessertspoon (vs. decisecond)
+  </Accordion>
+  <Accordion title="Surveying">
+    - `'` and all variants — feet (vs. arcminute)
+    - `''` and all variants — inches (vs. arcsecond)
+  </Accordion>
+  <Accordion title="Nuclear">
+    - `rad` — radiation absorbed dose (vs. radians)
+    - `rd` — same as `rad` (vs. rod)
+  </Accordion>
+  <Accordion title="Climate">
+    - `kt` — kilo-tonne (vs. karat)
+  </Accordion>
+</AccordionGroup>
+
+## Setting the domain globally
+
+`setUnitsDomain` sets a process-wide default domain. It returns the previous domain value so you can restore it afterward:
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+// Set nuclear domain globally
+std::uint64_t prev = setUnitsDomain(domains::nuclear);
+
+auto dose = unit_from_string("rad");
+// dose is radiation absorbed dose, not radians
+
+// Restore the previous domain
+setUnitsDomain(prev);
+```
+
+## Passing a domain per call
+
+Pass a domain constant as part of the `flags` argument to any `*_from_string` function. Per-call flags override the global domain for that call only. Use the corresponding values from the `unit_conversion_flags` enumeration:
+
+```cpp
+// "rad" as radiation absorbed dose in a single call
+auto dose = unit_from_string("rad", units::nuclear_units);
+
+// "year" as mean tropical year
+auto trop_year = unit_from_string("year", units::astronomy_units);
+
+// Combine domain flags with other flags
+auto u = unit_from_string("C", units::cooking_units | units::case_insensitive);
+```
+
+The per-call flag names are:
+
+| Flag | Domain |
+|---|---|
+| `units::strict_ucum` | UCUM |
+| `units::cooking_units` | Cooking |
+| `units::astronomy_units` | Astronomy |
+| `units::nuclear_units` | Nuclear |
+| `units::surveying_units` | Surveying |
+| `units::climate_units` | Climate |
+| `units::us_customary_units` | US customary |
+
+## Setting a compile-time default domain
+
+If your application always operates in one domain, you can set the default at compile time to avoid any per-call overhead:
+
+<Tabs>
+  <Tab title="Preprocessor define">
+    Define `UNITS_DEFAULT_DOMAIN` before including the header:
+
+    ```cpp
+    #define UNITS_DEFAULT_DOMAIN units::domains::astronomy
+    #include <units/units.hpp>
+    ```
+  </Tab>
+  <Tab title="CMake variable">
+    Use the `UNITS_DOMAIN` CMake variable to set the domain by name. The build system translates it to the appropriate `units::domains::` constant automatically:
+
+    ```cmake
+    cmake -DUNITS_DOMAIN=NUCLEAR ..
+    ```
+
+    Accepted values: `UCUM`, `COOKING`, `ASTRONOMY`, `NUCLEAR`, `SURVEYING`, `CLIMATE`, `US_CUSTOMARY`.
+
+    See the [CMake variables reference](/reference/cmake-variables) for full details.
+  </Tab>
+</Tabs>
+
+## Example: `rad` in default vs nuclear domain
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+// Default domain — rad is radians
+auto radians = unit_from_string("rad");
+bool is_rad  = radians.is_convertible(precise::rad); // true
+
+// Nuclear domain — rad is radiation absorbed dose (0.01 Gy)
+auto dose    = unit_from_string("rad", units::nuclear_units);
+bool is_dose = dose.is_convertible(precise::Gy);     // true
+```

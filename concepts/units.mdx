@@ -1,0 +1,261 @@
+---
+title: "Units and precise_unit types explained"
+description: "unit is 8 bytes with float precision (~7 digits); precise_unit is 16 bytes with double precision (~13 digits) and adds a commodity field."
+keywords: ["unit", "precise_unit", "unit_base", "multiplier", "flags", "per_unit", "i_flag", "e_flag", "equation"]
+---
+
+The Units library exposes two types for representing a physical unit: `unit` and `precise_unit`. Both encode the same underlying dimensional information — a set of base-unit exponents packed into 4 bytes — but they differ in floating-point precision and in whether they carry a commodity code. Choosing between them is a trade-off between size and numerical fidelity.
+
+## The `unit_base` structure
+
+Every unit ultimately rests on `detail::unit_data`, a 4-byte bitfield that stores the exponent for each of the 10 supported dimensions and 4 flags. All powers are signed integers packed tightly so the entire structure fits into a 32-bit value (or 64-bit when `UNITS_BASE_TYPE` is `uint64_t`).
+
+```cpp
+// Bit layout of detail::unit_data (default 32-bit mode)
+signed int meter_    : 4;   // bits  0– 3
+signed int second_   : 4;   // bits  4– 7
+signed int kilogram_ : 3;   // bits  8–10
+signed int ampere_   : 3;   // bits 11–13
+signed int candela_  : 2;   // bits 14–15
+signed int kelvin_   : 3;   // bits 16–18
+signed int mole_     : 2;   // bits 19–20
+signed int radians_  : 3;   // bits 21–23
+signed int currency_ : 2;   // bits 24–25
+signed int count_    : 2;   // bits 26–27
+unsigned int per_unit_ : 1; // bit  28
+unsigned int i_flag_   : 1; // bit  29
+unsigned int e_flag_   : 1; // bit  30
+unsigned int equation_ : 1; // bit  31
+```
+
+The exponents represent the power to which each base dimension is raised. For example, velocity (m/s) has `meter_ = 1` and `second_ = -1` with all other exponents at zero.
+
+## The `unit` type
+
+`unit` pairs a `float` multiplier with a `unit_base`. The float provides roughly 7 significant decimal digits of precision. The full object is 8 bytes and is designed to be passed by value.
+
+```cpp
+class unit {
+  float multiplier_{1.0};                           // 4 bytes
+  detail::unit_data base_units_{0,0,0,0,0,0,0,0,0,0,0,0,0,0}; // 4 bytes
+};
+// sizeof(unit) == 8
+```
+
+## The `precise_unit` type
+
+`precise_unit` replaces the `float` multiplier with a `double` and adds a 32-bit commodity code. This gives approximately 13 significant decimal digits of precision. The full object is 16 bytes.
+
+```cpp
+class precise_unit {
+  double multiplier_{1.0};   // 8 bytes
+  detail::unit_data base_units_{...}; // 4 bytes
+  std::uint32_t commodity_{0};        // 4 bytes
+};
+// sizeof(precise_unit) == 16
+```
+
+The commodity field lets you attach a material or product classification to a unit — for example, distinguishing a gallon of water from a gallon of gasoline. See the [commodities guide](/guides/commodities) for details.
+
+<Tabs>
+  <Tab title="unit">
+    ```cpp
+    #include <units/units.hpp>
+    using namespace units;
+
+    // Construct from predefined constants
+    unit speed = m / s;           // meters per second
+    unit area  = m.pow(2);        // square meters
+
+    // Construct from a multiplier and another unit
+    unit km_per_hour(1000.0 / 3600.0, m / s);
+
+    // Check the multiplier
+    double mult = speed.multiplier(); // 1.0
+    ```
+  </Tab>
+  <Tab title="precise_unit">
+    ```cpp
+    #include <units/units.hpp>
+    using namespace units;
+
+    // Construct from predefined precise constants
+    precise_unit speed = precise::m / precise::s;
+    precise_unit area  = precise::m.pow(2);
+
+    // Attach a commodity code
+    precise_unit water_volume = precise_unit(precise::L, getCommodity("water"));
+
+    // The multiplier is a double
+    double mult = speed.multiplier(); // full double precision
+    ```
+  </Tab>
+</Tabs>
+
+## Constructing units
+
+The most common way to build a unit is from the predefined constants in the `units` namespace (or `units::precise` for `precise_unit`):
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+measurement length1 = 45.0 * m;
+measurement length2 = 20.0 * m;
+measurement area    = length1 * length2;
+
+std::cout << "the area is " << area
+          << " or " << area.convert_to(ft.pow(2)) << ".\n";
+```
+
+You can also construct a `unit` directly from a `unit_base` and a multiplier:
+
+```cpp
+// Explicit construction: multiplier + base unit
+unit kilometer(1000.0, m.base_units()); // same as 1000 * m
+```
+
+## Unit operators
+
+Both `unit` and `precise_unit` support arithmetic operators that combine dimensions and scale multipliers:
+
+<AccordionGroup>
+  <Accordion title="Multiplication (*)">
+    Multiplies two units: base-unit exponents are added, multipliers are multiplied.
+
+    ```cpp
+    unit force = kg * m / s.pow(2); // kilogram · meter · second⁻²  (newton)
+    ```
+  </Accordion>
+  <Accordion title="Division (/)">
+    Divides two units: base-unit exponents are subtracted, multipliers are divided.
+
+    ```cpp
+    auto new_unit  = m / s;   // meters per second
+    auto another   = new_unit * s;
+    // another == m
+    ```
+  </Accordion>
+  <Accordion title="Inverse — inv()">
+    Returns the reciprocal of a unit. Equivalent to `pow(-1)`.
+
+    ```cpp
+    unit per_meter = m.inv(); // 1/m
+    ```
+  </Accordion>
+  <Accordion title="Power — pow(int)">
+    Raises a unit to an integer power. The exponent may be negative. Note that `^` cannot be used due to C++ precedence rules.
+
+    ```cpp
+    unit area_unit = m.pow(2);  // m²
+    unit per_area  = m.pow(-2); // 1/m²
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+Power operations scale each base-unit exponent by multiplying it with the power value. If any intermediate exponent exceeds the representable range for that dimension's bit width, it wraps silently. The operation is always defined but may not produce the expected result. See [how units are encoded internally](/concepts/unit-representation) for the representable ranges.
+</Warning>
+
+## Unit methods
+
+<AccordionGroup>
+  <Accordion title="is_convertible(unit)">
+    Returns `true` if the two units share the same non-counting base dimensions (ignoring mole, count, and radians). This is the check to perform before calling `convert`.
+
+    ```cpp
+    if (!meas.units().is_convertible(precise::m / precise::s)) {
+        throw std::invalid_argument("incompatible units");
+    }
+    ```
+  </Accordion>
+  <Accordion title="multiplier() / multiplier_f()">
+    Returns the unit's scale factor relative to the SI base unit combination. `multiplier()` always returns a `double`; `multiplier_f()` returns a `float`.
+
+    ```cpp
+    unit km = 1000.0 * m;
+    double factor = km.multiplier(); // 1000.0
+    ```
+  </Accordion>
+  <Accordion title="base_units()">
+    Returns the underlying `detail::unit_data` bitfield, giving access to individual dimension exponents and flags via its getter methods.
+
+    ```cpp
+    unit force = kg * m / s.pow(2);
+    auto base = force.base_units();
+    // base.meter() == 1, base.kg() == 1, base.second() == -2
+    ```
+  </Accordion>
+  <Accordion title="is_per_unit()">
+    Returns `true` if the per-unit flag is set. Per-unit values represent dimensionless ratios relative to a base quantity (common in power systems analysis).
+  </Accordion>
+  <Accordion title="is_equation()">
+    Returns `true` if the equation flag is set, indicating a unit defined by a logarithmic or other non-linear equation (such as decibels or the Beaufort scale).
+  </Accordion>
+  <Accordion title="has_i_flag() / has_e_flag()">
+    `has_i_flag()` indicates an imaginary or directional unit (useful for reactive power and compass bearings). When squared, a unit with `i_flag` set behaves like the imaginary unit `i`: the flag goes to zero rather than doubling.
+
+    `has_e_flag()` is a general-purpose discriminant used to differentiate otherwise-identical unit strings and to tag equation units.
+  </Accordion>
+</AccordionGroup>
+
+## Equality semantics
+
+Equality for both `unit` and `precise_unit` uses a rounded comparison rather than exact floating-point equality. The library rounds multipliers to a defined number of significant digits and then compares with a small tolerance.
+
+<Tabs>
+  <Tab title="unit (float, ~7 digits)">
+    ```cpp
+    // These compare equal despite the tiny difference
+    unit a = 1.0000001 * m;
+    unit b = 1.0 * m;
+    bool eq = (a == b); // true — within float tolerance
+    ```
+
+    Exact comparison is available via `is_exactly_the_same`, which uses raw `float` equality:
+
+    ```cpp
+    bool exact = a.is_exactly_the_same(b); // false
+    ```
+  </Tab>
+  <Tab title="precise_unit (double, ~13 digits)">
+    ```cpp
+    precise_unit a = 1.0000000000001 * precise::m;
+    precise_unit b = 1.0 * precise::m;
+    bool eq = (a == b); // true — within double tolerance
+    ```
+
+    Subnormal differences also compare as equal:
+
+    ```cpp
+    // If (a.multiplier() - b.multiplier()) is subnormal, a == b is true
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+`>` and `<` use exact comparison. `>=` and `<=` check the strict inequality first, then fall back to the rounded equality check. This means a situation like `a == b` and `a > b` can both be true simultaneously when values differ by less than the tolerance — a known consequence of the pragmatic rounding approach.
+</Note>
+
+## Flags reference
+
+| Flag | Method | Behavior on multiply | Behavior on power |
+|---|---|---|---|
+| `per_unit` | `is_per_unit()` | OR'd | passed through |
+| `i_flag` | `has_i_flag()` | XOR'd | zeroed on even powers |
+| `e_flag` | `has_e_flag()` | OR'd on `*`, XOR'd on `/` | zeroed on even powers (unless `i_flag` also set) |
+| `equation` | `is_equation()` | OR'd | passed through |
+
+## Converting between unit and precise_unit
+
+`precise_unit` can accept a `unit` in most operations. Going the other direction requires an explicit cast:
+
+```cpp
+precise_unit pu = precise::m / precise::s;
+
+// Downcast to unit (may lose precision)
+unit u = unit_cast(pu);
+
+// Check whether the downcast is lossless
+bool lossless = is_unit_cast_lossless(pu);
+```

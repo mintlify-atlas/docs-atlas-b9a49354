@@ -1,0 +1,146 @@
+---
+title: "Adding custom unit definitions at runtime"
+description: "Register custom unit names that work in string conversions. Control whether a unit is for input, output, or both, and manage the registry at runtime."
+keywords: ["addUserDefinedUnit", "addUserDefinedInputUnit", "addUserDefinedOutputUnit", "removeUserDefinedUnit", "clearUserDefinedUnits", "custom units"]
+---
+
+The units library allows you to register custom unit names at runtime. Once registered, a user-defined unit participates in string conversions exactly like any built-in unit: `unit_from_string` can parse it and `to_string` can generate it. You can also load a batch of definitions from a text file.
+
+## Registering a custom unit
+
+Call `addUserDefinedUnit(name, unit)` with a name string and a `precise_unit` value. The unit is immediately available in both directions — parsing and formatting.
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+// Define "idgit" as 4.754 mol/m²
+precise_unit idgit(4.754, precise::mol / precise::m.pow(2));
+addUserDefinedUnit("idgit", idgit);
+
+// Now "idgit" parses correctly
+auto ipm = unit_from_string("idgit/min");
+// ipm == idgit / precise::min  ✓
+
+// And to_string uses the custom name
+std::string s  = to_string(ipm);       // "idgit/min"
+std::string s2 = to_string(ipm.inv()); // "min/idgit"
+```
+
+User-defined units get priority in `to_string` output, including when squared or cubed as part of a compound unit:
+
+```cpp
+addUserDefinedUnit("angstrom", units::precise::distance::angstrom);
+
+std::string s1 = to_string(unit_from_string("us / angstrom^2")); // "us/angstrom^2"
+std::string s2 = to_string(unit_from_string("us / angstrom"));   // "us/angstrom"
+```
+
+## Input-only and output-only units
+
+Sometimes you only need a unit in one direction.
+
+<Tabs>
+  <Tab title="Input only">
+    Use `addUserDefinedInputUnit` when you want to accept a custom name in strings but not have `to_string` emit it. The unit parses correctly but `to_string` falls back to standard notation.
+
+    ```cpp
+    precise_unit idgit(4.754, precise::mol / precise::m.pow(2));
+    addUserDefinedInputUnit("idgit", idgit);
+
+    auto ipm = unit_from_string("idgit/min");
+    // ipm == idgit / min  ✓
+
+    std::string s = to_string(ipm);
+    // "idgit" does NOT appear — falls back to standard notation (e.g., "kat/m^2/min")
+    ```
+  </Tab>
+  <Tab title="Output only">
+    Use `addUserDefinedOutputUnit` when the parser already handles the unit correctly by other means, but you want a specific string in the output.
+
+    ```cpp
+    precise_unit idgit(4.754, precise::mol / precise::m.pow(2));
+    addUserDefinedOutputUnit("idgit", idgit);
+
+    // Parsing "idgit" directly does not work — it is output-only
+    auto ipm = unit_from_string("idgit/min");
+    // ipm != idgit / min  (string "idgit" is not recognized as input)
+
+    // But to_string uses the custom name
+    std::string s = to_string(idgit / precise::min); // "idgit/min"
+    ```
+  </Tab>
+</Tabs>
+
+## Removing a unit
+
+Remove a previously registered unit by name. This works for units registered via any of the three add functions.
+
+```cpp
+removeUserDefinedUnit("idgit");
+
+// Parsing now fails
+bool valid = is_valid(unit_from_string("idgit/min")); // false
+```
+
+## Managing the registry
+
+<AccordionGroup>
+  <Accordion title="clearUserDefinedUnits()">
+    Erases all user-defined units from the registry, including input-only and output-only registrations.
+
+    ```cpp
+    clearUserDefinedUnits();
+    ```
+  </Accordion>
+  <Accordion title="disableUserDefinedUnits() and enableUserDefinedUnits()">
+    Disabling user-defined units removes the registry lookup from string conversion without erasing stored definitions. This can improve performance if custom units are registered during startup but are not needed during a performance-critical section.
+
+    ```cpp
+    disableUserDefinedUnits();
+    // ... performance-critical parsing loop ...
+    enableUserDefinedUnits();
+    ```
+
+    `disableUserDefinedUnits()` also prevents new units from being added while disabled. Units registered before disabling are preserved and become active again after `enableUserDefinedUnits()` is called.
+  </Accordion>
+</AccordionGroup>
+
+## Loading from a file
+
+Use `definedUnitsFromFile(filename)` to load many unit definitions at once from a plain text file. The function is declared `noexcept` and returns a `std::string` containing any errors, one per line. An empty return string means no errors occurred.
+
+The file format uses `=`, `,`, or `;` as separators between the name and the unit expression. Lines beginning with `#` are comments. Use `=>` for input-only definitions and `<=` for output-only definitions.
+
+```
+# comment
+meeter == meter
+meh == meeter per hour
+
+# input-only unit
+mehmeh => meh/s
+
+# output-only unit
+hemhem <= s/meh
+```
+
+Quoted names are supported for unit names that contain special characters:
+
+```
+"bl==p" = 18.7 cups
+'y,,p'  = 9 tons
+yimdles ; dozen yeedles
+```
+
+```cpp
+std::string errors = definedUnitsFromFile("my_units.txt");
+if (!errors.empty()) {
+    std::cerr << "Unit file errors:\n" << errors << "\n";
+}
+```
+
+## Thread safety
+
+<Warning>
+User-defined unit modifications are **not thread-safe**. Make all `addUserDefinedUnit`, `removeUserDefinedUnit`, and `clearUserDefinedUnits` calls from a single thread before using the registry from other threads. The enable/disable flag (`disableUserDefinedUnits` / `enableUserDefinedUnits`) uses an atomic variable and is thread-safe, but it does not protect modifications to the unit data itself.
+</Warning>

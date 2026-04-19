@@ -1,0 +1,111 @@
+---
+title: "Working with commodities in unit definitions"
+description: "Attach a commodity code to a precise_unit to distinguish gallon of water from gallon of gasoline. Look up, define, and manage commodity codes in the registry."
+keywords: ["commodity", "getCommodity", "getCommodityName", "addUserDefinedCommodity", "precise_unit", "commodity code"]
+---
+
+A commodity adds context to a unit beyond its physical dimension. For example, a gallon of water and a gallon of gasoline share the same dimension (volume) but represent different things in the context of trade or conversion. The `precise_unit` type includes a 32-bit commodity field that lets you make this distinction.
+
+<Note>
+Only `precise_unit` supports commodities. The regular `unit` type does not have a commodity field, and commodity information is lost when converting a `precise_unit` to a `unit`.
+</Note>
+
+## Getting a commodity code from a string
+
+`getCommodity(string)` translates a commodity name into a `uint32_t` code. The lookup follows this order:
+
+1. Check user-defined (custom) commodities, if enabled
+2. Check the built-in standardized commodity list
+3. Check the special compact encoding (names of 5 or fewer lowercase ASCII characters are stored directly in the code bits)
+4. Generate a hash-based code from the string and store it as a custom commodity
+
+```cpp
+#include <units/units.hpp>
+using namespace units;
+
+std::uint32_t water_code = getCommodity("water");
+std::uint32_t oil_code   = getCommodity("oil");
+
+// Attach the commodity to a precise_unit
+precise_unit water_volume = precise::gal;
+water_volume.commodity(water_code);
+
+precise_unit oil_volume = precise::gal;
+oil_volume.commodity(oil_code);
+
+// water_volume != oil_volume even though both are gallons
+```
+
+## Getting a commodity name from a code
+
+`getCommodityName(uint32_t)` is the reverse lookup. It follows this order:
+
+1. Check user-defined commodities, if enabled
+2. Check the built-in standardized commodity names
+3. Decode compact names stored directly in the code bits
+4. Return `"CXCOMM[<code>]"` as a fallback if no name is found
+
+```cpp
+std::string name = getCommodityName(water_code); // "water"
+```
+
+## User-defined commodities
+
+Register custom commodity names and codes when the built-in list does not cover your domain.
+
+<AccordionGroup>
+  <Accordion title="addUserDefinedCommodity(name, code)">
+    Associates a string name with a `uint32_t` code. The commodity is then recognized by both `getCommodity` and `getCommodityName`.
+
+    ```cpp
+    std::uint32_t my_code = 0x00420001; // pick a code that doesn't conflict
+    addUserDefinedCommodity("syngas", my_code);
+
+    std::uint32_t retrieved = getCommodity("syngas");    // my_code
+    std::string   name      = getCommodityName(my_code); // "syngas"
+    ```
+  </Accordion>
+  <Accordion title="clearUserDefinedCommodities()">
+    Removes all user-defined commodity entries from the registry.
+
+    ```cpp
+    clearUserDefinedCommodities();
+    ```
+  </Accordion>
+  <Accordion title="disableUserDefinedCommodities() and enableUserDefinedCommodities()">
+    Disabling skips the user-defined commodity lookup during string conversions, giving a slight performance improvement if you know custom commodities are not in use. User-defined commodity definitions are preserved while disabled.
+
+    ```cpp
+    disableUserDefinedCommodities();
+    // ... processing without custom commodity lookups ...
+    enableUserDefinedCommodities();
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Reading and writing the commodity field
+
+The commodity field is accessed through methods on `precise_unit`:
+
+```cpp
+precise_unit u = precise::gal;
+
+// Read the commodity code
+std::uint32_t code = u.commodity(); // 0 by default (no commodity)
+
+// Write a commodity code
+u.commodity(getCommodity("water"));
+
+// Inspect the commodity name
+std::string name = getCommodityName(u.commodity()); // "water"
+```
+
+## Built-in commodity list
+
+The library ships with a list of commonly traded commodities, plus several used in clinical or unit-standard definitions. The list includes agricultural products, energy commodities, metals, and others drawn from international trade tables. See [`commodities.cpp`](https://github.com/LLNL/units/blob/master/units/commodities.cpp) for the full set of built-in entries. This list continues to expand toward general coverage of international trade classifications.
+
+## Thread safety
+
+<Note>
+Adding user-defined commodities with `addUserDefinedCommodity` is thread-safe. The enable and disable flag operations (`disableUserDefinedCommodities` / `enableUserDefinedCommodities`) also use atomic variables and are safe to call from multiple threads. However, `clearUserDefinedCommodities` is not thread-safe and should only be called when no other thread is accessing the commodity registry.
+</Note>

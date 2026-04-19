@@ -1,0 +1,172 @@
+---
+title: "Integrating Units with CMake projects"
+description: "Add the LLNL Units library to your CMake project via FetchContent, Git submodule, or find_package, and link using the correct CMake target."
+---
+
+The Units library is designed to be consumed from CMake and provides well-named targets regardless of whether you pull it in via FetchContent, a Git submodule, or a system installation. This page covers each integration method and the CMake variables that control what gets built and installed.
+
+## CMake targets
+
+All integration methods expose the same targets. The target names can be changed by setting `-DUNITS_CMAKE_PROJECT_NAME` at configure time.
+
+| Target | Description |
+|---|---|
+| `units::units` | The compiled static or shared library. Provides full functionality including string conversions and root operations. |
+| `units::header_only` | Header-only interface target. Always generated. Does not require linking a compiled library. |
+| `units::module` | Experimental C++20 module target. Available when `UNITS_BUILD_CXX_MODULE=ON` and CMake ≥ 3.28. |
+
+<Note>
+  Setting `-DUNITS_CMAKE_PROJECT_NAME=LLNL-UNITS` renames all targets and install paths. For example, the compiled library target becomes `llnl-units::units` and the header-only target becomes `llnl-units::header_only`.
+</Note>
+
+---
+
+## Method 1: FetchContent (recommended)
+
+FetchContent downloads and configures the library automatically during your CMake configure step. This is the recommended approach for new projects that do not already manage Git submodules.
+
+<Steps>
+  <Step title="Declare the dependency">
+    Add the following to your `CMakeLists.txt`. Pin to a specific tag or commit rather than `main` for reproducible builds.
+
+    ```cmake
+    include(FetchContent)
+
+    FetchContent_Declare(units
+      GIT_REPOSITORY https://github.com/LLNL/units.git
+      GIT_TAG        main
+    )
+
+    FetchContent_MakeAvailable(units)
+    ```
+  </Step>
+  <Step title="Link your target">
+    Link against `units::units` for the full compiled library or `units::header_only` if you only need the headers.
+
+    ```cmake
+    target_link_libraries(my_app PRIVATE units::units)
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  When using FetchContent inside a larger project, set `UNITS_INSTALL=OFF` before the `FetchContent_MakeAvailable` call to prevent the library from registering install targets alongside your own.
+
+  ```cmake
+  set(UNITS_INSTALL OFF CACHE INTERNAL "")
+  FetchContent_MakeAvailable(units)
+  ```
+</Tip>
+
+---
+
+## Method 2: Git submodule
+
+Adding Units as a Git submodule gives you explicit version control over the dependency and is the approach used by [HELICS](https://github.com/GMLC-TDC/HELICS). The submodule approach uses `add_subdirectory` and relies on the same CMake targets.
+
+<Steps>
+  <Step title="Add the submodule">
+    ```bash
+    git submodule add https://github.com/LLNL/units.git ThirdParty/units
+    git submodule update --init --recursive
+    ```
+  </Step>
+  <Step title="Configure CMake variables and add the subdirectory">
+    Set the variables that control what the library builds before calling `add_subdirectory`. The following is taken directly from the HELICS project:
+
+    ```cmake
+    # Prevent units from registering its own install targets
+    set(UNITS_INSTALL OFF CACHE INTERNAL "")
+
+    if(NOT CMAKE_CXX_STANDARD)
+        set(CMAKE_CXX_STANDARD 17)
+    endif()
+
+    set(UNITS_BUILD_OBJECT_LIBRARY  OFF CACHE INTERNAL "")
+    set(UNITS_BUILD_STATIC_LIBRARY  ON  CACHE INTERNAL "")
+    set(UNITS_BUILD_SHARED_LIBRARY  OFF CACHE INTERNAL "")
+    set(UNITS_BUILD_CONVERTER_APP   OFF CACHE INTERNAL "")
+    set(UNITS_BUILD_WEBSERVER       OFF CACHE INTERNAL "")
+    set(UNITS_CLANG_TIDY_OPTIONS    ""  CACHE INTERNAL "")
+    set(UNITS_BUILD_FUZZ_TARGETS    OFF CACHE INTERNAL "")
+
+    add_subdirectory(
+        "${PROJECT_SOURCE_DIR}/ThirdParty/units"
+        "${PROJECT_BINARY_DIR}/ThirdParty/units"
+    )
+    ```
+  </Step>
+  <Step title="Link your target">
+    ```cmake
+    target_link_libraries(my_app PUBLIC units::units)
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The `UNITS_INSTALL` variable defaults to `OFF` automatically when units detects it is being included as a subproject (i.e., when `CMAKE_PROJECT_NAME` does not equal `PROJECT_NAME`). Setting it explicitly with `CACHE INTERNAL ""` prevents it from appearing in the CMake GUI.
+</Note>
+
+---
+
+## Method 3: find_package after install
+
+If you have built and installed the library system-wide or into a prefix, consume it with `find_package`.
+
+<Steps>
+  <Step title="Build and install the library">
+    ```bash
+    git clone https://github.com/LLNL/units.git
+    cmake -S units -B build -DCMAKE_BUILD_TYPE=Release
+    cmake --build build
+    cmake --install build --prefix /usr/local
+    ```
+  </Step>
+  <Step title="Find and link in your project">
+    ```cmake
+    find_package(units REQUIRED)
+    target_link_libraries(my_app PRIVATE units::units)
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Key CMake variables for integration
+
+These are the variables most relevant when embedding units in a larger project. See the [CMake variables reference](/reference/cmake-variables) for the full list.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `UNITS_HEADER_ONLY` | `OFF` | Expose only the `units::header_only` target. Disables both compiled library options. |
+| `UNITS_BUILD_STATIC_LIBRARY` | `ON` | Build a static library. |
+| `UNITS_BUILD_SHARED_LIBRARY` | `OFF` | Build a shared library. Cannot be enabled alongside `UNITS_BUILD_STATIC_LIBRARY`. |
+| `UNITS_INSTALL` | `ON` (standalone), `OFF` (subproject) | Control whether install targets are registered. Set to `OFF` in subproject or FetchContent use. |
+| `UNITS_NAMESPACE` | `units` | Override the top-level C++ namespace. Accepts nested namespaces like `myproject::units` when compiling with C++17 or later. |
+| `UNITS_CMAKE_PROJECT_NAME` | `UNITS` | Rename the CMake project and all exported targets and install paths. |
+| `UNITS_BUILD_CXX_MODULE` | `OFF` | Build the experimental C++20 module target `units::module`. Requires CMake ≥ 3.28. |
+| `UNITS_LIBRARY_EXPORT_COMMAND` | `EXPORT unitsTargets` | Override the export command to merge the units targets into your root project's target list. |
+
+### Merging targets into a root project export
+
+If your project produces a single CMake package with all targets exported together, you can fold the units targets into your own export set by setting `UNITS_LIBRARY_EXPORT_COMMAND` before including units:
+
+```cmake
+set(UNITS_LIBRARY_EXPORT_COMMAND "EXPORT myProjectTargets" CACHE INTERNAL "")
+```
+
+This causes the units library targets to appear in `myProjectTargets` alongside your own, so consumers of your package get units as a bundled dependency automatically.
+
+### Header-only target
+
+The `units::header_only` target is always generated and does not require linking a compiled library. Use it when you only need unit arithmetic and predefined constants and do not need string conversions or root operations.
+
+```cmake
+target_link_libraries(my_app PRIVATE units::header_only)
+```
+
+You must also define `UNITS_HEADER_ONLY` when using this target directly with the headers (without CMake propagating the definition for you):
+
+```cmake
+target_compile_definitions(my_app PRIVATE UNITS_HEADER_ONLY)
+```

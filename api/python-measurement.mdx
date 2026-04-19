@@ -1,0 +1,494 @@
+---
+title: "Python Measurement class — API reference"
+description: "Complete reference for the Measurement class and module-level functions in units_llnl: bundle a value with a unit, convert, compare, and format at runtime."
+keywords: ["Measurement", "Python API", "units_llnl", "llnl units", "unit conversion", "convert", "value"]
+---
+
+The `Measurement` class pairs a numeric value with a `Unit`, enabling arithmetic, conversion, and comparison while preserving dimensional information. You can construct a `Measurement` from a string such as `"10 m"`, from a float and a `Unit`, or as the result of arithmetic between units and scalars. Like `Unit`, `Measurement` is immutable — operations always return new objects.
+
+```python
+from units_llnl import Measurement
+
+m1 = Measurement("10 m")
+m2 = Measurement("2.5 s")
+m3 = m1 / m2
+m4 = Measurement("4.0 m/s")
+assert m3 == m4
+```
+
+<Note>
+  `Measurement` wraps `precise_measurement` from the C++ library. Both the
+  numeric value and the unit multiplier use double-precision floating point,
+  giving roughly 13 significant digits of precision.
+</Note>
+
+---
+
+## Constructors
+
+<ResponseField name="Measurement(measurement_str)" type="constructor">
+  Construct a measurement from a string. The string is expected to contain a
+  numeric value followed by a unit string (e.g., `"10 m"`, `"9.81 m/s^2"`).
+
+  ```python
+  from units_llnl import Measurement
+
+  m1 = Measurement("10 m")
+  m2 = Measurement("9.81 m/s^2")
+  m3 = Measurement("100 km/h")
+  ```
+</ResponseField>
+
+<ResponseField name="Measurement(value, unit)" type="constructor">
+  Construct a measurement from a float value and a `Unit` object or a unit
+  string.
+
+  ```python
+  from units_llnl import Measurement, Unit
+
+  m1 = Measurement(5.0, Unit("km"))
+  m2 = Measurement(273.15, "K")    # unit as string
+  ```
+
+  <ParamField path="value" type="float" required>
+    The numeric quantity.
+  </ParamField>
+
+  <ParamField path="unit" type="Unit | str" required>
+    The unit for the value. Accepts a `Unit` object or a unit string.
+  </ParamField>
+</ResponseField>
+
+---
+
+## Methods
+
+### State inspection
+
+<ResponseField name="is_valid()" type="bool">
+  Returns `True` if the measurement is valid — i.e. the underlying unit is not
+  an error unit and the value is not NaN.
+
+  ```python
+  assert Measurement("10 m").is_valid()
+  ```
+</ResponseField>
+
+<ResponseField name="is_normal()" type="bool">
+  Returns `True` if the measurement is normal — not an error, NaN, or subnormal
+  value.
+</ResponseField>
+
+<ResponseField name="is_close(other)" type="bool">
+  Returns `True` if `self` and `other` are numerically close. Both measurements
+  are converted to a non-precise measurement representation before comparison.
+
+  ```python
+  a = Measurement("1.0 m")
+  b = Measurement("100.0 cm")
+  assert a.is_close(b)
+  ```
+
+  <ParamField path="other" type="Measurement" required>
+    The measurement to compare against.
+  </ParamField>
+</ResponseField>
+
+### Conversion
+
+<ResponseField name="value_as(unit)" type="float">
+  Returns the numeric value converted to the given unit without creating a new
+  `Measurement` object. Equivalent to `convert_to(unit).value`.
+
+  ```python
+  m = Measurement("5.0 km")
+  print(m.value_as("m"))      # 5000.0
+  print(m.value_as(Unit("m")))
+  ```
+
+  <ParamField path="unit" type="Unit | str" required>
+    The target unit.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="convert_to(unit)" type="Measurement">
+  Returns a new `Measurement` with the value rescaled to `unit`.
+
+  ```python
+  m = Measurement("5.0 km")
+  m_in_meters = m.convert_to("m")
+  assert m_in_meters.value == 5000.0
+  ```
+
+  <ParamField path="unit" type="Unit | str" required>
+    The target unit.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="convert_to_base()" type="Measurement">
+  Returns a new `Measurement` with the value converted to the SI base unit for
+  its dimension (multiplier becomes 1.0).
+
+  ```python
+  m = Measurement("5.0 km")
+  base = m.convert_to_base()
+  print(base)   # 5000.0 m
+  ```
+</ResponseField>
+
+### Mathematics
+
+<ResponseField name="root(power)" type="Measurement">
+  Returns a new measurement taken to the `1/power` root. Both the value and the
+  unit are rooted.
+
+  ```python
+  area = Measurement("9.0 m^2")
+  side = area.root(2)
+  assert side.value == pytest.approx(3.0)
+  ```
+
+  <ParamField path="power" type="int" required>
+    The root to take. Must evenly divide all base-unit exponents of the unit.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="sqrt()" type="Measurement">
+  Convenience method for `root(2)`.
+
+  ```python
+  side = Measurement("9.0 m^2").sqrt()
+  ```
+</ResponseField>
+
+### Mutation (returns new measurement)
+
+<ResponseField name="set_value(value)" type="Measurement">
+  Returns a new `Measurement` with the numeric value replaced by `value` and the
+  unit unchanged.
+
+  ```python
+  m  = Measurement("5.0 m")
+  m2 = m.set_value(10.0)
+  assert m2.value == 10.0
+  ```
+
+  <ParamField path="value" type="float" required>
+    The replacement numeric value.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="set_units(unit)" type="Measurement">
+  Returns a new `Measurement` with the unit replaced. The numeric value is
+  **not** rescaled — only the unit label changes.
+
+  ```python
+  m  = Measurement("5.0 m")
+  m2 = m.set_units("km")   # still stores 5.0, but now labelled km
+  ```
+
+  <ParamField path="unit" type="Unit | str" required>
+    The replacement unit.
+  </ParamField>
+</ResponseField>
+
+---
+
+## Properties
+
+<ResponseField name="value" type="float">
+  The raw numeric portion of the measurement in its current unit basis.
+
+  ```python
+  m = Measurement("5.0 km")
+  print(m.value)   # 5.0
+  ```
+</ResponseField>
+
+<ResponseField name="units" type="Unit">
+  The `Unit` associated with this measurement.
+
+  ```python
+  m = Measurement("5.0 km")
+  print(m.units)   # km
+  ```
+</ResponseField>
+
+---
+
+## Operators
+
+<ResponseField name="* and / with Measurement" type="Measurement">
+  Multiplying or dividing two `Measurement` objects produces a new `Measurement`.
+  Both the values and the units are combined.
+
+  ```python
+  m1 = Measurement("10 m")
+  m2 = Measurement("2.5 s")
+  speed = m1 / m2          # 4.0 m/s
+  ```
+</ResponseField>
+
+<ResponseField name="+ and -" type="Measurement">
+  Addition and subtraction ensure both operands are in the same base unit before
+  performing the operation. The result is expressed in the base unit.
+
+  ```python
+  a = Measurement("1.0 km")
+  b = Measurement("500.0 m")
+  c = a + b     # 1500.0 m
+  ```
+</ResponseField>
+
+<ResponseField name="~" type="Measurement">
+  The bitwise NOT operator inverts the measurement, equivalent to `1 / measurement`.
+
+  ```python
+  m    = Measurement("2.0 s")
+  freq = ~m      # 0.5 1/s
+  ```
+</ResponseField>
+
+<ResponseField name="**" type="Measurement">
+  Raises a measurement to an integer power (may be negative). Both the value and
+  the unit are raised to the given power.
+
+  ```python
+  side = Measurement("3.0 m")
+  area = side ** 2    # 9.0 m²
+  ```
+
+  <Warning>
+    Some unit representations have limits on the exponents they can encode.
+    Results always wrap rather than raise an error, but may not match
+    expectations for very large powers.
+  </Warning>
+</ResponseField>
+
+<ResponseField name="*, / and % with float" type="Measurement">
+  Multiplying, dividing, or applying modulo with a float scalar produces a new
+  `Measurement` with the value scaled accordingly and the unit unchanged.
+
+  ```python
+  m      = Measurement("10.0 m")
+  double = m * 2.0    # 20.0 m
+  half   = m / 2.0    # 5.0 m
+  rem    = m % 3.0    # 1.0 m
+  ```
+</ResponseField>
+
+<ResponseField name="//" type="Measurement">
+  Floor-divides the measurement, returning the floor of the resulting value in
+  the divided unit.
+
+  ```python
+  m = Measurement("10.0 m") / Measurement("3.0 s")
+  floor = m // Measurement("1.0 m/s")
+  ```
+</ResponseField>
+
+<ResponseField name="==, !=, >, <, >=, <=" type="bool">
+  Comparison operators. Measurements are compared after converting both to the
+  same base unit.
+
+  ```python
+  assert Measurement("1.0 km") > Measurement("500.0 m")
+  assert Measurement("1.0 m")  == Measurement("100.0 cm")
+  ```
+</ResponseField>
+
+---
+
+## String, float, and bool behaviour
+
+`str(measurement)` returns a human-readable string such as `"5.0 km"`.
+
+`float(measurement)` returns the raw numeric value (same as `.value`).
+
+`bool(measurement)` returns `True` if the measurement is both valid and
+numerically non-zero.
+
+```python
+m = Measurement("5.0 km")
+print(str(m))    # "5 km" (library-formatted)
+print(float(m))  # 5.0
+print(bool(m))   # True
+
+zero = Measurement("0.0 m")
+print(bool(zero))  # False
+```
+
+---
+
+## f-string format specifiers
+
+`Measurement` supports three special f-string format specifiers in addition to
+the default.
+
+<CodeGroup>
+
+```python default (value and unit)
+m = Measurement("5.0 km")
+print(f"{m}")          # "5 km"
+```
+
+```python value only
+m = Measurement("5.0 km")
+print(f"{m:-}")        # "5"   — strips the unit, shows only the value
+```
+
+```python convert then show
+m = Measurement("5.0 km")
+print(f"{m:m}")        # "5000 m"  — converts to meters then shows value and unit
+```
+
+```python convert, value only
+m = Measurement("5.0 km")
+print(f"{m:-m}")       # "5000"  — converts to meters then strips unit
+```
+
+</CodeGroup>
+
+<Tip>
+  The `f"{m:new_unit}"` and `f"{m:-new_unit}"` specifiers accept any unit string
+  recognised by the library, making them convenient for display formatting
+  without creating intermediate `Measurement` objects.
+</Tip>
+
+---
+
+## Rounding support
+
+`round`, `math.ceil`, `math.floor`, and `math.trunc` all work on `Measurement`
+objects and operate on the raw numeric value, returning a `Measurement` with the
+same unit.
+
+```python
+import math
+from units_llnl import Measurement
+
+m = Measurement("2.7 m")
+
+print(round(m))         # 3.0 m
+print(math.floor(m))    # 2.0 m
+print(math.ceil(m))     # 3.0 m
+print(math.trunc(m))    # 2.0 m
+```
+
+---
+
+## Module-level functions
+
+These functions are available directly from the `units_llnl` module.
+
+<ResponseField name="convert(value, unit_in, unit_out)" type="float">
+  Convert `value` from `unit_in` to `unit_out`. All unit arguments accept either
+  a `Unit` object or a unit string.
+
+  ```python
+  from units_llnl import convert
+
+  result = convert(10.0, "m", "cm")
+  assert result == 1000.0
+
+  result2 = convert(60.0, "km/h", "m/s")
+  ```
+
+  <ParamField path="value" type="float" required>
+    The numeric value in `unit_in`.
+  </ParamField>
+
+  <ParamField path="unit_in" type="Unit | str" required>
+    The source unit.
+  </ParamField>
+
+  <ParamField path="unit_out" type="Unit | str" required>
+    The target unit.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="convert_pu(value, unit_in, unit_out, base)" type="float">
+  Convert `value` between units where one of the units may be a per-unit value.
+  The `base` parameter supplies the base quantity used to scale the per-unit
+  value during conversion.
+
+  ```python
+  from units_llnl import convert_pu
+
+  result = convert_pu(0.5, "pu", "MW", 100.0)   # 50 MW at 100 MW base
+  ```
+
+  <ParamField path="value" type="float" required>
+    The numeric value to convert.
+  </ParamField>
+
+  <ParamField path="unit_in" type="Unit | str" required>
+    The source unit (may have the per-unit flag set).
+  </ParamField>
+
+  <ParamField path="unit_out" type="Unit | str" required>
+    The target unit.
+  </ParamField>
+
+  <ParamField path="base" type="float" required>
+    The base value used in the per-unit conversion.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="default_unit(unit_type)" type="Unit">
+  Returns the canonical `Unit` for a given measurement type string.
+
+  ```python
+  from units_llnl import default_unit
+
+  u = default_unit("velocity")
+  print(u)   # m/s  (or the library's canonical velocity unit)
+  ```
+
+  <ParamField path="unit_type" type="str" required>
+    A string describing the type of measurement, such as `"velocity"`,
+    `"pressure"`, or `"energy"`.
+  </ParamField>
+</ResponseField>
+
+<ResponseField name="add_user_defined_unit(name, definition)" type="None">
+  Register a custom unit name that will be recognised in all future string
+  parsing by the library. `definition` may be a unit string or a `Unit` object.
+
+  ```python
+  from units_llnl import add_user_defined_unit, Unit
+
+  add_user_defined_unit("fortnight", "1209600 s")   # 2 weeks in seconds
+  add_user_defined_unit("smoots", Unit(1.7018, Unit("m")))
+  ```
+
+  <ParamField path="name" type="str" required>
+    The new unit name to register.
+  </ParamField>
+
+  <ParamField path="definition" type="str | Unit" required>
+    The definition of the new unit as a string expression or a `Unit` object.
+  </ParamField>
+
+  <Warning>
+    User-defined units are registered globally for the lifetime of the Python
+    process. Re-running the same call with a different definition will
+    overwrite the previous registration.
+  </Warning>
+</ResponseField>
+
+<ResponseField name="add_units_from_file(file)" type="None">
+  Load a set of user-defined unit definitions from a file. The file format
+  follows the same convention as `add_user_defined_unit` — one definition per
+  line.
+
+  ```python
+  from units_llnl import add_units_from_file
+
+  add_units_from_file("custom_units.txt")
+  ```
+
+  <ParamField path="file" type="str" required>
+    Path to the file containing unit definitions.
+  </ParamField>
+</ResponseField>
